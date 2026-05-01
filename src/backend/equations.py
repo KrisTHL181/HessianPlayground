@@ -2,14 +2,125 @@
 
 import torch
 
-from backend.protocol import make_status
+import backend.config as cfg
+
+# ---------------------------------------------------------------------------
+# Pure computation kernel — no Session dependency
+# ---------------------------------------------------------------------------
+
+
+def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularization, apply_step, step_scale):
+    """Solve H @ dx = -g for the Newton step, optionally apply it.
+
+    Args:
+        model: nn.Module on the correct device.
+        loss_fn: callable.
+        data_loader: DataLoader for computing loss_before/loss_after.
+        g: [N] flat gradient vector.
+        H: [N,N] or [N] Hessian (full matrix or diagonal vector).
+        is_diag: bool, whether H is a diagonal vector.
+        regularization: float, Tikhonov regularization factor.
+        apply_step: bool, whether to update model parameters.
+        step_scale: float, multiplier for the step.
+
+    Returns dict with step_type, loss_before, loss_after, loss_improvement,
+    step_norm, gradient_norm, solver_used, regularization_used, converged,
+    iterations, step_applied, and optionally model_state (bytes).
+    """
+    n = g.numel()
+
+    loss_before = _compute_loss(model, data_loader, loss_fn)
+
+    if is_diag:
+        H_reg = H + regularization
+        dx = -g / H_reg
+        solver = "diagonal"
+        converged = True
+        iterations = None
+    else:
+        H_reg = H + regularization * torch.eye(n)
+        rhs = -g
+
+        if n < cfg.DIRECT_SOLVE_SIZE_THRESHOLD:
+            try:
+                dx = torch.linalg.solve(H_reg, rhs)
+                solver = "direct_solve"
+                converged = True
+                iterations = None
+            except Exception:
+                dx, _residuals, _rank, _svals = torch.linalg.lstsq(H_reg, rhs.unsqueeze(1))
+                dx = dx.squeeze(1)
+                solver = "lstsq"
+                converged = True
+                iterations = None
+        else:
+            dx, _residuals, _rank, _svals = torch.linalg.lstsq(H_reg, rhs.unsqueeze(1))
+            dx = dx.squeeze(1)
+            solver = "lstsq"
+            converged = True
+            iterations = None
+
+    dx = step_scale * dx
+    step_norm = dx.norm().item()
+    grad_norm = g.norm().item()
+
+    loss_after = None
+    step_applied = False
+    model_state = None
+    if apply_step:
+        original_params = [p.data.clone() for p in model.parameters()]
+        _apply_flat_delta(model, dx)
+        loss_after = _compute_loss(model, data_loader, loss_fn)
+        step_applied = True
+
+        if loss_after > loss_before * 1.5:
+            for p, orig in zip(model.parameters(), original_params):
+                p.data.copy_(orig)
+            loss_after = loss_before
+            step_applied = False
+
+        if step_applied:
+            buf = __import__("io").BytesIO()
+            torch.save(model.state_dict(), buf)
+            model_state = buf.getvalue()
+
+    loss_improvement = loss_before - (loss_after or loss_before)
+
+    return {
+        "step_type": "newton",
+        "loss_before": loss_before,
+        "loss_after": loss_after or loss_before,
+        "loss_improvement": loss_improvement,
+        "step_norm": step_norm,
+        "gradient_norm": grad_norm,
+        "solver_used": solver,
+        "regularization_used": regularization,
+        "converged": converged,
+        "iterations": iterations,
+        "step_applied": step_applied,
+        "model_state": model_state,
+    }
+
+
+def _apply_flat_delta(model, delta):
+    """Add a flat delta vector to model parameters in-place."""
+    offset = 0
+    with torch.no_grad():
+        for p in model.parameters():
+            numel = p.numel()
+            p.data.copy_((p.data.float() + delta[offset:offset + numel].view_as(p.float())).to(p.dtype))
+            offset += numel
+
+
+# ---------------------------------------------------------------------------
+# Session-based wrappers
+# ---------------------------------------------------------------------------
 
 
 def solve_newton(session, regularization, apply_step, step_scale, ws):
     """Solve H @ dx = -g for the Newton step, optionally apply it.
 
-    If Hessian is not cached, compute it first (diagonal approximation for speed).
-    Returns before/after loss, step info.
+    Session-based wrapper that extracts grad/H from session and calls the kernel.
     """
     if session.model is None:
         raise ValueError("Create a model first")
@@ -17,9 +128,6 @@ def solve_newton(session, regularization, apply_step, step_scale, ws):
     model = session.model
     loss_fn = session.loss_fn
     data_loader = session.train_loader
-
-    # Compute loss before
-    loss_before = _compute_loss(model, data_loader, loss_fn)
 
     # Get gradient
     x, y = next(iter(data_loader))
@@ -36,76 +144,14 @@ def solve_newton(session, regularization, apply_step, step_scale, ws):
         session._cached_hessian = (H_diag, True)
 
     H, is_diag = session._cached_hessian
-    n = session.param_count
 
-    # Add regularization
-    if is_diag:
-        H_reg = H + regularization
-        # Solve: dx_i = -g_i / H_reg_i
-        dx = -g / H_reg
-        solver = "diagonal"
-        converged = True
-        iterations = None
-    else:
-        H_reg = H + regularization * torch.eye(n)
-        rhs = -g
+    result = solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularization, apply_step, step_scale)
 
-        if n < 5000:
-            try:
-                dx = torch.linalg.solve(H_reg, rhs)
-                solver = "direct_solve"
-                converged = True
-                iterations = None
-            except Exception:
-                dx, residuals, rank, svals = torch.linalg.lstsq(H_reg, rhs.unsqueeze(1))
-                dx = dx.squeeze(1)
-                solver = "lstsq"
-                converged = True
-                iterations = None
-        else:
-            dx, residuals, rank, svals = torch.linalg.lstsq(H_reg, rhs.unsqueeze(1))
-            dx = dx.squeeze(1)
-            solver = "lstsq"
-            converged = True
-            iterations = None
+    # If step was applied, unserialize model_state (local wrapper detail)
+    if result.get("step_applied") and result.get("model_state"):
+        del result["model_state"]  # local path doesn't need serialized state
 
-    # Scale step
-    dx = step_scale * dx
-
-    step_norm = dx.norm().item()
-    grad_norm = g.norm().item()
-
-    # Apply step
-    loss_after = None
-    step_applied = False
-    if apply_step:
-        original_params = [p.data.clone() for p in model.parameters()]
-        session.set_flat_params(session.get_flattened_params() + dx)
-        loss_after = _compute_loss(model, data_loader, loss_fn)
-        step_applied = True
-
-        # If step made things worse, revert
-        if loss_after > loss_before * 1.5:
-            for p, orig in zip(model.parameters(), original_params):
-                p.data.copy_(orig)
-            loss_after = loss_before
-            step_applied = False
-
-    loss_improvement = loss_before - (loss_after or loss_before)
-
-    return {
-        "step_type": "newton",
-        "loss_before": loss_before,
-        "loss_after": loss_after or loss_before,
-        "loss_improvement": loss_improvement,
-        "step_norm": step_norm,
-        "gradient_norm": grad_norm,
-        "solver_used": solver,
-        "regularization_used": regularization,
-        "converged": converged,
-        "iterations": iterations,
-        "step_applied": step_applied,
-    }
+    return result
 
 
 def solve_linear(session, rhs, regularization, ws):
@@ -153,7 +199,7 @@ def solve_linear(session, rhs, regularization, ws):
         converged = True
     else:
         H_reg = H + regularization * torch.eye(n)
-        if n < 5000:
+        if n < cfg.DIRECT_SOLVE_SIZE_THRESHOLD:
             try:
                 x = torch.linalg.solve(H_reg, b)
                 solver = "direct_solve"
@@ -187,7 +233,7 @@ def _compute_loss(model, data_loader, loss_fn):
     with torch.no_grad():
         for x, y in data_loader:
             output = model(x)
-            loss = loss_fn(output, y)
-            total_loss += loss.item() * x.size(0)
+            cur_loss = loss_fn(output, y)
+            total_loss += cur_loss.item() * x.size(0)
             total_samples += x.size(0)
     return total_loss / total_samples if total_samples > 0 else 0.0

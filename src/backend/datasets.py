@@ -9,12 +9,12 @@ from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
 
-from backend.config import DATASET_CACHE_DIR
+from backend.config import DATASET_CACHE_DIR, DEFAULT_BATCH_SIZE, DEFAULT_TRAIN_SPLIT, XOR_RANDOM_SEED, POLYNOMIAL_RANDOM_SEED
 
 
 def load_dataset(name: str, params: dict) -> dict:
     """Load or generate a dataset. Returns dict with loaders and metadata."""
-    batch_size = params.get("batch_size", 64)
+    batch_size = params.get("batch_size", DEFAULT_BATCH_SIZE)
 
     if name == "mnist":
         return _load_mnist(batch_size, params)
@@ -130,7 +130,7 @@ def _generate_xor(batch_size, params):
     num_samples = params.get("num_samples", 1000)
     noise = params.get("noise_level", 0.05)
 
-    np.random.seed(42)
+    np.random.seed(XOR_RANDOM_SEED)
     centers = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.float32)
     labels_center = np.array([0, 1, 1, 0])
 
@@ -142,7 +142,7 @@ def _generate_xor(batch_size, params):
     labels = torch.tensor(labels, dtype=torch.long)
 
     ds = torch.utils.data.TensorDataset(data, labels)
-    split = int(0.8 * num_samples)
+    split = int(DEFAULT_TRAIN_SPLIT * num_samples)
     train_ds = torch.utils.data.Subset(ds, range(split))
     test_ds = torch.utils.data.Subset(ds, range(split, num_samples))
 
@@ -171,7 +171,7 @@ def _generate_polynomial(batch_size, params):
     noise = params.get("noise_level", 0.1)
     input_dim = params.get("input_dim", 1)
 
-    np.random.seed(123)
+    np.random.seed(POLYNOMIAL_RANDOM_SEED)
     x = np.random.uniform(-2, 2, (num_samples, input_dim)).astype(np.float32)
 
     # Generate random polynomial coefficients, sum over input dims
@@ -186,7 +186,7 @@ def _generate_polynomial(batch_size, params):
     y_t = torch.tensor(y).unsqueeze(1)
 
     ds = torch.utils.data.TensorDataset(x_t, y_t)
-    split = int(0.8 * num_samples)
+    split = int(DEFAULT_TRAIN_SPLIT * num_samples)
     train_ds = torch.utils.data.Subset(ds, range(split))
     test_ds = torch.utils.data.Subset(ds, range(split, num_samples))
 

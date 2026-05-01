@@ -4,63 +4,54 @@ import torch
 
 import backend.config as cfg
 
+# ---------------------------------------------------------------------------
+# Pure computation kernels — no Session dependency
+# ---------------------------------------------------------------------------
 
-def compute_full_hessian(session, max_batches=1):
-    """Compute full Hessian using per-parameter second derivative approach."""
-    model = session.model
-    loss_fn = session.loss_fn
-    data_loader = session.train_loader
 
-    n = session.param_count
-    if n > cfg.MAX_PARAM_COUNT_DIAGONAL:
+def compute_full_hessian_kernel(model, x, y, loss_fn, param_count):
+    """Compute full Hessian via per-parameter second derivatives.
+
+    Args:
+        model: nn.Module (already on correct device).
+        x, y: one batch of input/target tensors.
+        loss_fn: callable.
+        param_count: total number of trainable parameters.
+
+    Returns [param_count, param_count] symmetric Hessian matrix.
+    """
+    if param_count > cfg.MAX_PARAM_COUNT_DIAGONAL:
         raise ValueError(
-            f"Model has {n} parameters, exceeds limit of {cfg.MAX_PARAM_COUNT_DIAGONAL} for full Hessian. "
-            f"Use diagonal approximation instead."
+            f"Model has {param_count} parameters, exceeds limit of {cfg.MAX_PARAM_COUNT_DIAGONAL} "
+            f"for full Hessian. Use diagonal approximation instead."
         )
 
-    # Get a batch
-    x, y = next(iter(data_loader))
-
-    # Zero gradients and compute loss
     model.zero_grad()
     output = model(x)
     loss = loss_fn(output, y)
 
-    # First-order gradients
     grads = torch.autograd.grad(loss, model.parameters(), create_graph=True)
     flat_grads = torch.cat([g.view(-1) for g in grads])
 
-    # Compute Hessian row by row
-    H = torch.zeros(n, n)
-    for i in range(n):
-        # Second derivative of loss w.r.t param[i] and all params
+    H = torch.zeros(param_count, param_count)
+    for i in range(param_count):
         row_grads = torch.autograd.grad(
-            flat_grads[i], model.parameters(), retain_graph=(i < n - 1)
+            flat_grads[i], model.parameters(), retain_graph=(i < param_count - 1)
         )
         flat_row = torch.cat([g.view(-1) for g in row_grads])
         H[i] = flat_row
-        # Zero any accumulated grad
         model.zero_grad()
 
-    # Ensure symmetry
     H = (H + H.T) / 2
-
     return H
 
 
-def compute_diagonal_hessian(session, num_hutchinson_samples=20):
+def compute_diagonal_hessian_kernel(model, x, y, loss_fn, param_count, num_hutchinson_samples=20):
     """Estimate diagonal Hessian using Hutchinson's trace estimator.
 
     Uses the identity: diag(H) ≈ E[v ⊙ (Hv)] where v are Rademacher vectors.
     Hv is computed via automatic differentiation of the gradient-vector product.
     """
-    model = session.model
-    loss_fn = session.loss_fn
-    data_loader = session.train_loader
-
-    x, y = next(iter(data_loader))
-    n = session.param_count
-
     model.zero_grad()
     output = model(x)
     loss = loss_fn(output, y)
@@ -68,24 +59,37 @@ def compute_diagonal_hessian(session, num_hutchinson_samples=20):
     grads = torch.autograd.grad(loss, model.parameters(), create_graph=True)
     flat_grads = torch.cat([g.view(-1).float() for g in grads])
 
-    diag = torch.zeros(n)
+    diag = torch.zeros(param_count)
 
     for k in range(num_hutchinson_samples):
-        # Rademacher random vector
-        v = torch.randint(0, 2, (n,)).float() * 2 - 1
-
-        # Hessian-vector product: Hv = ∇_θ (g · v)
+        v = torch.randint(0, 2, (param_count,)).float() * 2 - 1
         g_dot_v = (flat_grads * v).sum()
         hv_list = torch.autograd.grad(g_dot_v, model.parameters(), retain_graph=(k < num_hutchinson_samples - 1))
         flat_hv = torch.cat([h.view(-1).float() for h in hv_list])
-
         diag += v * flat_hv
-
         model.zero_grad()
 
     diag = diag / num_hutchinson_samples
-
     return diag
+
+
+# ---------------------------------------------------------------------------
+# Session-based convenience wrappers
+# ---------------------------------------------------------------------------
+
+
+def compute_full_hessian(session, max_batches=1):
+    """Compute full Hessian from session state."""
+    x, y = next(iter(session.train_loader))
+    return compute_full_hessian_kernel(session.model, x, y, session.loss_fn, session.param_count)
+
+
+def compute_diagonal_hessian(session, num_hutchinson_samples=20):
+    """Estimate diagonal Hessian from session state."""
+    x, y = next(iter(session.train_loader))
+    return compute_diagonal_hessian_kernel(
+        session.model, x, y, session.loss_fn, session.param_count, num_hutchinson_samples
+    )
 
 
 def compute_eigenvalues(H, method="exact", is_diagonal=False):

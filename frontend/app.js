@@ -726,7 +726,7 @@ class App {
         if (optTextarea) optTextarea.textContent = presets.optimizer;
 
         // Init components
-        this.ws = new WebSocketManager(`ws://${location.host}/ws`);
+        this.ws = new WebSocketManager(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`);
         this.log = new LogPanel(document.getElementById('log-output'));
         this.modelEditor = new CodeEditor(document.getElementById('model-editor'), {
             defaultValue: presets.mlp,

@@ -157,9 +157,9 @@ class _Dispatcher:
         from backend.model_sandbox import instantiate_model
         code = payload.get("code", "")
         model_name = payload.get("model_name", "")
-        input_size = payload.get("input_size", 784)
-        hidden_sizes = payload.get("hidden_sizes", [128, 64])
-        output_size = payload.get("output_size", 10)
+        input_size = payload.get("input_size", cfg.DEFAULT_INPUT_SIZE)
+        hidden_sizes = payload.get("hidden_sizes", cfg.DEFAULT_HIDDEN_SIZES)
+        output_size = payload.get("output_size", cfg.DEFAULT_OUTPUT_SIZE)
 
         model, arch_summary, param_count, warning = instantiate_model(code, model_name, input_size, hidden_sizes, output_size)
 
@@ -240,14 +240,15 @@ class _Dispatcher:
         from backend.datasets import load_dataset
         ds_name = payload.get("dataset", "mnist")
         params = payload.get("params", {})
+        params.setdefault("batch_size", cfg.DEFAULT_BATCH_SIZE)
 
         result = load_dataset(ds_name, params)
         session.train_loader = result["train_loader"]
         session.test_loader = result["test_loader"]
         session.dataset_info = result
         session.task_type = result.get("task", "classification")
-        session.input_size = result.get("input_size", 784)
-        session.output_size = result.get("num_classes", 10)
+        session.input_size = result.get("input_size", cfg.DEFAULT_INPUT_SIZE)
+        session.output_size = result.get("num_classes", cfg.DEFAULT_OUTPUT_SIZE)
         session.invalidate_cache()
 
         return {k: v for k, v in result.items() if k not in ("train_loader", "test_loader")}
@@ -256,7 +257,7 @@ class _Dispatcher:
     async def _handle_set_custom_dataset(session, payload, ws):
         from backend.model_sandbox import exec_user_code
         code = payload.get("code", "")
-        batch_size = payload.get("batch_size", 64)
+        batch_size = payload.get("batch_size", cfg.DEFAULT_BATCH_SIZE)
         task = payload.get("task", "classification")
 
         extra_globals = {"torch": torch, "np": __import__("numpy")}
@@ -281,7 +282,7 @@ class _Dispatcher:
             ds = dataset_cls
 
         total = len(ds)
-        split = int(0.8 * total)
+        split = int(cfg.DEFAULT_TRAIN_SPLIT * total)
         train_ds = torch.utils.data.Subset(ds, range(split))
         test_ds = torch.utils.data.Subset(ds, range(split, total))
 
@@ -452,9 +453,9 @@ class _Dispatcher:
     @staticmethod
     async def _handle_solve_newton_step(session, payload, ws):
         _ensure_loss_fn(session)
-        reg = payload.get("regularization", 1e-4)
+        reg = payload.get("regularization", cfg.DEFAULT_REGULARIZATION)
         apply_step = payload.get("apply_step", True)
-        step_scale = payload.get("step_scale", 1.0)
+        step_scale = payload.get("step_scale", cfg.DEFAULT_STEP_SCALE)
 
         if cfg.REMOTE_ENABLED and _get_remote().connected:
             loop = asyncio.get_event_loop()

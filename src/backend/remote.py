@@ -46,26 +46,37 @@ class RemoteExecutor:
 
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(host, port=port, username=user, password=password, timeout=15)
+        client.connect(host, port=port, username=user, password=password, timeout=cfg.REMOTE_CONNECT_TIMEOUT)
 
         self._client = client
         self._sftp = client.open_sftp()
 
         # Create working directory on remote
         uid = uuid.uuid4().hex[:8]
-        self._remote_dir = f"/tmp/hp_{uid}"
+        self._remote_dir = f"{cfg.REMOTE_TEMP_DIR}/hp_{uid}"
         self._sftp.mkdir(self._remote_dir)
 
         # Upload worker script
         worker_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "remote_worker.py")
         self._sftp.put(worker_src, f"{self._remote_dir}/worker.py")
+
+        # Upload backend package so the worker can import computation kernels
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        self._sftp.mkdir(f"{self._remote_dir}/backend")
+        for fname in ["__init__.py", "config.py", "protocol.py", "hessian.py",
+                      "landscape.py", "equations.py", "training.py",
+                      "session.py", "model_sandbox.py"]:
+            src = os.path.join(backend_dir, fname)
+            if os.path.exists(src):
+                self._sftp.put(src, f"{self._remote_dir}/backend/{fname}")
+
         self._worker_uploaded = True
 
         # Detect remote device
         try:
             _, stdout, _ = client.exec_command(
                 f"{cfg.REMOTE_PYTHON} -c 'import torch; print(\"cuda\" if torch.cuda.is_available() else \"cpu\")'",
-                timeout=30
+                timeout=cfg.REMOTE_DETECT_TIMEOUT
             )
             stdout.channel.recv_exit_status()
             self._remote_device = stdout.read().decode().strip()
@@ -186,6 +197,7 @@ class RemoteExecutor:
         if r.get("step_applied") and r.get("model_state"):
             session.model.load_state_dict(_deserialize(r["model_state"]))
             session.invalidate_cache()
+        r.pop("model_state", None)  # bytes, not JSON-serializable
 
         return r
 
@@ -193,9 +205,9 @@ class RemoteExecutor:
         data = self._serialize_session(session)
         data["type"] = "run_training"
         data["params"] = {
-            "epochs": payload.get("epochs", 5),
-            "batch_size": payload.get("batch_size", 64) if hasattr(session, 'train_loader') else 64,
-            "lr": 0.001,
+            "epochs": payload.get("epochs", cfg.DEFAULT_EPOCHS),
+            "batch_size": payload.get("batch_size", cfg.DEFAULT_BATCH_SIZE) if hasattr(session, 'train_loader') else cfg.DEFAULT_BATCH_SIZE,
+            "lr": cfg.DEFAULT_LEARNING_RATE,
         }
         if session.loss_fn is None:
             data["loss_fn"] = "cross_entropy" if session.task_type == "classification" else "mse"
@@ -208,6 +220,7 @@ class RemoteExecutor:
         if r.get("model_state"):
             session.model.load_state_dict(_deserialize(r["model_state"]))
             session.invalidate_cache()
+        r.pop("model_state", None)  # bytes, not JSON-serializable
 
         return r
 
@@ -253,7 +266,7 @@ class RemoteExecutor:
 
             # Execute worker
             cmd = f"{cfg.REMOTE_PYTHON} {self._remote_dir}/worker.py --input {input_path} --output {output_path}"
-            _, stdout, stderr = self._client.exec_command(cmd, timeout=300)
+            _, stdout, stderr = self._client.exec_command(cmd, timeout=cfg.REMOTE_COMPUTE_TIMEOUT)
             exit_code = stdout.channel.recv_exit_status()
             stderr_text = stderr.read().decode("utf-8", errors="replace")
 
@@ -299,7 +312,7 @@ class RemoteExecutor:
             self._sftp.put(local_input, input_path)
 
             cmd = f"{cfg.REMOTE_PYTHON} {self._remote_dir}/worker.py --input {input_path} --output {output_path}"
-            _, stdout, stderr = self._client.exec_command(cmd, timeout=600)
+            _, stdout, stderr = self._client.exec_command(cmd, timeout=cfg.REMOTE_TRAINING_TIMEOUT)
 
             # Parse progress from stdout
             progress_lines = []
@@ -341,7 +354,7 @@ class RemoteExecutor:
 
     def _run_remote(self, cmd: str) -> tuple:
         """Run a shell command on the remote and return (exit_code, stdout, stderr)."""
-        _, stdout, stderr = self._client.exec_command(cmd, timeout=30)
+        _, stdout, stderr = self._client.exec_command(cmd, timeout=cfg.REMOTE_DETECT_TIMEOUT)
         exit_code = stdout.channel.recv_exit_status()
         return exit_code, stdout.read().decode(), stderr.read().decode()
 
