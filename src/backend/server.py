@@ -5,10 +5,11 @@ import sys
 
 from aiohttp import web
 
-# Ensure project root on sys.path
-_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+# Add src/ to sys.path for absolute imports of the backend package
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_src_dir = os.path.join(_project_root, "src")
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 from backend.config import DATASET_CACHE_DIR
 

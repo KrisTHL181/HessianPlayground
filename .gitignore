@@ -3,3 +3,4 @@ CLAUDE.md
 .vscode
 __pycache__
 /data
+*.egg-info

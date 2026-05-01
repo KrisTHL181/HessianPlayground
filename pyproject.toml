@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hessian-playground"
+version = "0.1.0"
+description = "Interactive web-based tool for exploring MLP models, Hessian matrices, and loss landscapes"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "aiohttp>=3.12",
+    "torch>=2.0",
+    "torchvision>=0.20",
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.scripts]
+hessian-playground = "backend.main:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["backend"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

@@ -20,7 +20,7 @@ Interactive web-based tool for exploring MLP models, optimizers, Hessian matrice
 pip install -r requirements.txt
 
 # Start server
-python backend/main.py --port 8080
+python src/backend/main.py --port 8080
 
 # Open in browser
 # http://localhost:8080

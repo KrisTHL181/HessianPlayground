@@ -1,6 +1,6 @@
 """Entry point for Hessian Playground server.
 
-Run with: python backend/main.py [--host HOST] [--port PORT]
+Run with: python src/backend/main.py [--host HOST] [--port PORT]
 """
 
 import argparse
@@ -9,10 +9,10 @@ import os
 import signal
 import sys
 
-# Ensure project root is on sys.path for absolute imports
-_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+# Add src/ to sys.path for absolute imports of the backend package
+_src_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 from aiohttp import web
 
