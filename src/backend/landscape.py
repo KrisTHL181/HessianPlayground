@@ -6,7 +6,7 @@ import time
 import torch
 import numpy as np
 
-from backend.config import MAX_GRID_RESOLUTION, MIN_SNAPSHOTS_FOR_PCA
+import backend.config as cfg
 from backend.protocol import make_status
 
 
@@ -19,9 +19,9 @@ async def compute_pca_landscape(session, resolution, range_factor, ws):
     3. Sample loss on a grid in the PC1×PC2 plane
     4. Return grid, trajectory projection, and explained variance
     """
-    if len(session.param_snapshots) < MIN_SNAPSHOTS_FOR_PCA:
+    if len(session.param_snapshots) < cfg.MIN_SNAPSHOTS_FOR_PCA:
         raise ValueError(
-            f"Need at least {MIN_SNAPSHOTS_FOR_PCA} parameter snapshots. "
+            f"Need at least {cfg.MIN_SNAPSHOTS_FOR_PCA} parameter snapshots. "
             f"Current: {len(session.param_snapshots)}. "
             f"Train with record_params_every > 0 to capture snapshots."
         )

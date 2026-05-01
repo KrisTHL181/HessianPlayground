@@ -44,6 +44,25 @@ body {
     font-weight: 600;
 }
 
+.btn-icon {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 18px;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.btn-icon:hover {
+    background: var(--surface2);
+}
+
 #header .status-dot {
     width: 10px;
     height: 10px;
@@ -425,4 +444,84 @@ body {
     text-align: left;
     padding: 8px 12px;
     font-size: 13px;
+}
+
+/* Settings modal */
+.settings-modal {
+    max-width: 480px;
+    padding: 0;
+    overflow: hidden;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px 12px;
+}
+
+.settings-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.settings-header .btn-icon {
+    font-size: 22px;
+    width: 28px;
+    height: 28px;
+    border: none;
+}
+
+.settings-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+}
+
+.settings-tab {
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.settings-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.settings-body {
+    padding: 16px 20px;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.settings-page .config-group {
+    margin-bottom: 12px;
+}
+
+.settings-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    margin: 16px 0 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.settings-section-label:first-child {
+    margin-top: 0;
+    border-top: none;
+    padding-top: 0;
+}
+
+.settings-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 20px 16px;
+    border-top: 1px solid var(--border);
 }

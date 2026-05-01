@@ -2,7 +2,7 @@
 
 import torch
 
-from backend.config import HESSIAN_DISPLAY_MAX_SIZE, MAX_PARAM_COUNT_DIAGONAL
+import backend.config as cfg
 
 
 def compute_full_hessian(session, max_batches=1):
@@ -12,9 +12,9 @@ def compute_full_hessian(session, max_batches=1):
     data_loader = session.train_loader
 
     n = session.param_count
-    if n > MAX_PARAM_COUNT_DIAGONAL:
+    if n > cfg.MAX_PARAM_COUNT_DIAGONAL:
         raise ValueError(
-            f"Model has {n} parameters, exceeds limit of {MAX_PARAM_COUNT_DIAGONAL} for full Hessian. "
+            f"Model has {n} parameters, exceeds limit of {cfg.MAX_PARAM_COUNT_DIAGONAL} for full Hessian. "
             f"Use diagonal approximation instead."
         )
 
@@ -182,7 +182,7 @@ def hessian_to_display_matrix(H, is_diagonal, model):
         if H.ndim > 1:
             H = torch.diag(H)
         n = len(H)
-        display_size = min(n, HESSIAN_DISPLAY_MAX_SIZE)
+        display_size = min(n, cfg.HESSIAN_DISPLAY_MAX_SIZE)
         if n <= display_size:
             display_matrix = torch.diag(H)
         else:
@@ -195,7 +195,7 @@ def hessian_to_display_matrix(H, is_diagonal, model):
                 display_matrix[i, i] = H[start:end].mean()
     else:
         n = H.shape[0]
-        display_size = min(n, HESSIAN_DISPLAY_MAX_SIZE)
+        display_size = min(n, cfg.HESSIAN_DISPLAY_MAX_SIZE)
         if n <= display_size:
             display_matrix = H
         else:

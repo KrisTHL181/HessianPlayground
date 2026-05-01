@@ -4,7 +4,7 @@ import copy
 import torch
 import torch.nn as nn
 
-from backend.config import HARD_PARAM_LIMIT
+import backend.config as cfg
 
 
 class Session:

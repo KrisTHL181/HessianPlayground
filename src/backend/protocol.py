@@ -17,6 +17,8 @@ VALID_REQUEST_TYPES = {
     "solve_linear_system",
     "get_model_summary",
     "adapt_model",
+    "get_config",
+    "update_config",
 }
 
 RESPONSE_TYPES = {

@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from aiohttp import web, WSMsgType
 
-from backend.config import HARD_PARAM_LIMIT
+import backend.config as cfg
 from backend.protocol import (
     VALID_REQUEST_TYPES,
     PUSH_TYPES,
@@ -66,6 +66,8 @@ ROUTER = {
     "solve_linear_system": "_handle_solve_linear_system",
     "get_model_summary": "_handle_get_model_summary",
     "adapt_model": "_handle_adapt_model",
+    "get_config": "_handle_get_config",
+    "update_config": "_handle_update_config",
 }
 
 
@@ -148,8 +150,8 @@ class _Dispatcher:
 
         model, arch_summary, param_count, warning = instantiate_model(code, model_name, input_size, hidden_sizes, output_size)
 
-        if param_count > HARD_PARAM_LIMIT:
-            raise ValueError(f"Model has {param_count} params, exceeds limit of {HARD_PARAM_LIMIT}")
+        if param_count > cfg.HARD_PARAM_LIMIT:
+            raise ValueError(f"Model has {param_count} params, exceeds limit of {cfg.HARD_PARAM_LIMIT}")
 
         session.model = model
         session._param_count = param_count
@@ -333,7 +335,6 @@ class _Dispatcher:
         _ensure_loss_fn(session)
 
         from backend.hessian import compute_full_hessian, compute_diagonal_hessian, hessian_to_display_matrix
-        from backend.config import MAX_PARAM_COUNT_WARN, MAX_PARAM_COUNT_DIAGONAL
 
         use_diag = payload.get("use_diagonal_approx", False)
         sample_batches = payload.get("sample_batches", 1)
@@ -343,8 +344,8 @@ class _Dispatcher:
             H, is_diag = session._cached_hessian
         else:
             n = session.param_count
-            warn_params = n > MAX_PARAM_COUNT_WARN
-            if n > MAX_PARAM_COUNT_DIAGONAL and not use_diag:
+            warn_params = n > cfg.MAX_PARAM_COUNT_WARN
+            if n > cfg.MAX_PARAM_COUNT_DIAGONAL and not use_diag:
                 await ws.send_json(make_status("warning",
                     f"Model has {n} parameters. Full Hessian would require significant memory. Using diagonal approximation."))
                 use_diag = True
@@ -530,3 +531,14 @@ class _Dispatcher:
             "old_output_size": old_output_size,
             "new_output_size": new_output_size,
         }
+
+    @staticmethod
+    async def _handle_get_config(session, payload, ws):
+        return cfg.get_runtime_config()
+
+    @staticmethod
+    async def _handle_update_config(session, payload, ws):
+        updates = payload.get("updates", {})
+        if not updates:
+            raise ValueError("No config updates provided")
+        return cfg.update_runtime_config(updates)

@@ -17,16 +17,18 @@
 
     <!-- App -->
     <link rel="stylesheet" href="/static/style.css">
+    <script defer src="/static/i18n.js"></script>
     <script defer src="/static/app.js"></script>
 </head>
 
 <body>
 
     <div id="header">
-        <h1>Hessian Playground</h1>
-        <div>
+        <h1 data-i18n="app.title">Hessian Playground</h1>
+        <div style="display:flex;align-items:center;gap:12px">
             <span class="status-dot connecting" id="status-dot"></span>
-            <span id="status-text" style="font-size:13px">Connecting...</span>
+            <span id="status-text" style="font-size:13px" data-i18n="status.connecting">Connecting...</span>
+            <button class="btn-icon" id="btn-settings" data-i18n-title="header.settings" title="Settings">⚙</button>
         </div>
     </div>
 
@@ -34,7 +36,7 @@
         <!-- Left: Code Editor -->
         <div id="code-panel" class="panel">
             <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Model Code</span>
+                <span data-i18n="panel.model_code">Model Code</span>
                 <div class="preset-bar">
                     <select id="preset-select">
                         <option value="mlp">MLP</option>
@@ -42,7 +44,7 @@
                         <option value="resnet">ResNet</option>
                         <option value="transformer">Transformer</option>
                     </select>
-                    <button class="btn btn-ghost" id="btn-load-preset">Load Preset</button>
+                    <button class="btn btn-ghost" id="btn-load-preset" data-i18n="btn.load_preset">Load Preset</button>
                 </div>
             </div>
             <div class="panel-body" id="model-editor"></div>
@@ -50,47 +52,47 @@
 
         <!-- Center: Configuration -->
         <div id="config-panel" class="panel">
-            <div class="panel-header">Configuration</div>
+            <div class="panel-header" data-i18n="panel.configuration">Configuration</div>
             <div class="panel-body" id="config-body">
                 <div class="config-group">
-                    <label>Dataset</label>
+                    <label data-i18n="label.dataset">Dataset</label>
                     <select id="dataset-select">
                         <option value="mnist">MNIST</option>
                         <option value="cifar10">CIFAR-10</option>
                         <option value="cifar100">CIFAR-100</option>
                         <option value="xor">XOR</option>
                         <option value="polynomial">Polynomial</option>
-                        <option value="custom">Custom Code</option>
+                        <option value="custom" data-i18n="opt.custom_code">Custom Code</option>
                     </select>
                 </div>
                 <div class="config-group" id="custom-dataset-group" style="display:none">
-                    <label>Custom Dataset Code</label>
+                    <label data-i18n="label.custom_dataset_code">Custom Dataset Code</label>
                     <textarea id="custom-dataset-code"
                         style="width:100%;height:80px;background:var(--bg);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:12px;margin-bottom:6px"></textarea>
-                    <label>Task Type</label>
+                    <label data-i18n="label.task_type">Task Type</label>
                     <select id="custom-task-type">
-                        <option value="classification">Classification</option>
-                        <option value="regression">Regression</option>
+                        <option value="classification" data-i18n="opt.classification">Classification</option>
+                        <option value="regression" data-i18n="opt.regression">Regression</option>
                     </select>
                 </div>
 
                 <div class="config-group" id="size-group" style="display:flex;gap:8px">
                     <div style="flex:1">
-                        <label>Input Size</label>
+                        <label data-i18n="label.input_size">Input Size</label>
                         <input type="number" id="input-size" value="784" min="1">
                     </div>
                     <div style="flex:1">
-                        <label>Output Size</label>
+                        <label data-i18n="label.output_size">Output Size</label>
                         <input type="number" id="output-size" value="10" min="1">
                     </div>
                 </div>
                 <div class="config-group">
-                    <label>Hidden Layers</label>
-                    <input type="text" id="hidden-sizes" value="128,64" placeholder="e.g. 128,64">
+                    <label data-i18n="label.hidden_layers">Hidden Layers</label>
+                    <input type="text" id="hidden-sizes" value="128,64" data-i18n-placeholder="placeholder.hidden_sizes" placeholder="e.g. 128,64">
                 </div>
 
                 <div class="config-group">
-                    <label>Optimizer</label>
+                    <label data-i18n="label.optimizer">Optimizer</label>
                     <select id="optimizer-select">
                         <option value="Adam">Adam</option>
                         <option value="SGD">SGD</option>
@@ -98,57 +100,57 @@
                         <option value="RMSprop">RMSprop</option>
                         <option value="Adagrad">Adagrad</option>
                         <option value="Adadelta">Adadelta</option>
-                        <option value="custom">Custom Code</option>
+                        <option value="custom" data-i18n="opt.custom_code">Custom Code</option>
                     </select>
                 </div>
                 <div class="config-group" id="custom-opt-group" style="display:none">
-                    <label>Custom Optimizer Code</label>
+                    <label data-i18n="label.custom_optimizer_code">Custom Optimizer Code</label>
                     <textarea id="custom-opt-code"
                         style="width:100%;height:80px;background:var(--bg);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:12px"></textarea>
                 </div>
 
                 <div class="config-group">
-                    <label>Learning Rate</label>
+                    <label data-i18n="label.learning_rate">Learning Rate</label>
                     <input type="number" id="lr-input" value="0.001" step="0.0001" min="0">
                 </div>
                 <div class="config-group">
-                    <label>Batch Size</label>
+                    <label data-i18n="label.batch_size">Batch Size</label>
                     <input type="number" id="batch-size" value="64" min="1" max="1024">
                 </div>
                 <div class="config-group">
-                    <label>Epochs</label>
+                    <label data-i18n="label.epochs">Epochs</label>
                     <input type="number" id="epochs-input" value="5" min="1" max="1000">
                 </div>
 
                 <hr style="border-color:var(--border);margin-bottom:10px">
 
                 <div class="btn-row">
-                    <button class="btn btn-primary" id="btn-create">Create Model</button>
-                    <button class="btn btn-green" id="btn-train" disabled>Train</button>
-                    <button class="btn btn-danger" id="btn-stop" disabled>Stop</button>
+                    <button class="btn btn-primary" id="btn-create" data-i18n="btn.create_model">Create Model</button>
+                    <button class="btn btn-green" id="btn-train" disabled data-i18n="btn.train">Train</button>
+                    <button class="btn btn-danger" id="btn-stop" disabled data-i18n="btn.stop">Stop</button>
                 </div>
                 <div class="btn-row">
-                    <button class="btn btn-ghost" id="btn-hessian" disabled>Hessian</button>
-                    <button class="btn btn-ghost" id="btn-pca-landscape" disabled>PCA Landscape</button>
-                    <button class="btn btn-ghost" id="btn-random-landscape" disabled>Random Landscape</button>
+                    <button class="btn btn-ghost" id="btn-hessian" disabled data-i18n="btn.hessian">Hessian</button>
+                    <button class="btn btn-ghost" id="btn-pca-landscape" disabled data-i18n="btn.pca_landscape">PCA Landscape</button>
+                    <button class="btn btn-ghost" id="btn-random-landscape" disabled data-i18n="btn.random_landscape">Random Landscape</button>
                 </div>
                 <div class="btn-row">
-                    <button class="btn btn-ghost" id="btn-newton" disabled>Newton Step</button>
-                    <button class="btn btn-ghost" id="btn-reset">Reset</button>
+                    <button class="btn btn-ghost" id="btn-newton" disabled data-i18n="btn.newton_step">Newton Step</button>
+                    <button class="btn btn-ghost" id="btn-reset" data-i18n="btn.reset">Reset</button>
                 </div>
             </div>
         </div>
 
         <!-- Right: Visualization -->
         <div id="vis-panel" class="panel">
-            <div class="panel-header">Visualization</div>
+            <div class="panel-header" data-i18n="panel.visualization">Visualization</div>
             <div class="panel-body">
                 <div class="vis-tabs">
-                    <div class="vis-tab active" data-tab="loss">Loss</div>
-                    <div class="vis-tab" data-tab="hessian">Hessian</div>
-                    <div class="vis-tab" data-tab="landscape">Landscape</div>
-                    <div class="vis-tab" data-tab="eigenvalues">Eigenvalues</div>
-                    <div class="vis-tab" data-tab="equation">Equation</div>
+                    <div class="vis-tab active" data-tab="loss" data-i18n="tab.loss">Loss</div>
+                    <div class="vis-tab" data-tab="hessian" data-i18n="tab.hessian">Hessian</div>
+                    <div class="vis-tab" data-tab="landscape" data-i18n="tab.landscape">Landscape</div>
+                    <div class="vis-tab" data-tab="eigenvalues" data-i18n="tab.eigenvalues">Eigenvalues</div>
+                    <div class="vis-tab" data-tab="equation" data-i18n="tab.equation">Equation</div>
                 </div>
                 <div class="vis-content">
                     <div id="plot-loss"></div>
@@ -157,7 +159,7 @@
                     <div id="plot-eigenvalues" style="display:none"></div>
                     <div id="plot-equation" style="display:none"></div>
                     <button class="btn btn-ghost hessian-diag-btn" id="btn-diag-toggle" style="display:none"
-                        title="Highlight only diagonal elements">Diagonal Only</button>
+                        data-i18n-title="btn.diagonal_only" title="Highlight only diagonal elements" data-i18n="btn.diagonal_only">Diagonal Only</button>
                 </div>
             </div>
         </div>
@@ -165,30 +167,100 @@
 
     <div id="log-resizer"></div>
     <div id="log-panel">
-        <div class="panel-header">Log</div>
+        <div class="panel-header" data-i18n="panel.log">Log</div>
         <div id="log-output"></div>
     </div>
 
     <!-- Dataset adaptation popup -->
     <div id="adapt-popup">
-        <h4>Dataset Changed</h4>
-        <p class="adapt-desc">The new dataset has different input/output dimensions. How should the model be adapted?</p>
+        <h4 data-i18n="popup.dataset_changed">Dataset Changed</h4>
+        <p class="adapt-desc" data-i18n="popup.adapt_desc">The new dataset has different input/output dimensions. How should the model be adapted?</p>
         <div class="adapt-btns">
-            <button class="btn btn-danger" id="adapt-reset-full">Reset Full Model — discard all weights, start fresh</button>
-            <button class="btn btn-ghost" id="adapt-reset-ends">Reset First &amp; Last Layers — reinitialize input/output layers only</button>
-            <button class="btn btn-ghost" id="adapt-expand">Expand Matrices — keep existing weights, initialize new rows/cols</button>
+            <button class="btn btn-danger" id="adapt-reset-full" data-i18n="popup.reset_full">Reset Full Model — discard all weights, start fresh</button>
+            <button class="btn btn-ghost" id="adapt-reset-ends" data-i18n="popup.reset_ends">Reset First &amp; Last Layers — reinitialize input/output layers only</button>
+            <button class="btn btn-ghost" id="adapt-expand" data-i18n="popup.expand">Expand Matrices — keep existing weights, initialize new rows/cols</button>
+        </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal settings-modal">
+            <div class="settings-header">
+                <h3 data-i18n="settings.title">Settings</h3>
+                <button class="btn-icon" id="btn-settings-close">&times;</button>
+            </div>
+            <div class="settings-tabs">
+                <div class="settings-tab active" data-stab="language" data-i18n="settings.language">Language</div>
+                <div class="settings-tab" data-stab="params" data-i18n="settings.parameters">Parameters</div>
+            </div>
+            <div class="settings-body">
+                <div class="settings-page" id="settings-page-language">
+                    <div class="config-group">
+                        <label data-i18n="settings.ui_language">UI Language</label>
+                        <select id="settings-lang">
+                            <option value="en">English</option>
+                            <option value="zh">中文</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-page" id="settings-page-params" style="display:none">
+                    <div class="settings-section-label" data-i18n="settings.param_limits">Parameter Limits</div>
+                    <div class="config-group">
+                        <label data-i18n="settings.max_param_warn">Warn Threshold</label>
+                        <input type="number" id="cfg-MAX_PARAM_COUNT_WARN" min="100" step="100">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.max_param_diag">Diagonal Threshold</label>
+                        <input type="number" id="cfg-MAX_PARAM_COUNT_DIAGONAL" min="100" step="100">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.hard_limit">Hard Limit</label>
+                        <input type="number" id="cfg-HARD_PARAM_LIMIT" min="1000" step="1000">
+                    </div>
+                    <div class="settings-section-label" data-i18n="settings.display">Display</div>
+                    <div class="config-group">
+                        <label data-i18n="settings.hessian_display">Hessian Display Max Size</label>
+                        <input type="number" id="cfg-HESSIAN_DISPLAY_MAX_SIZE" min="20" max="500" step="10">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.grid_resolution">Max Grid Resolution</label>
+                        <input type="number" id="cfg-MAX_GRID_RESOLUTION" min="10" max="200" step="5">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.min_snapshots">Min Snapshots for PCA</label>
+                        <input type="number" id="cfg-MIN_SNAPSHOTS_FOR_PCA" min="2" max="20">
+                    </div>
+                    <div class="settings-section-label" data-i18n="settings.execution">Execution</div>
+                    <div class="config-group">
+                        <label data-i18n="settings.sandbox_timeout">Sandbox Timeout (s)</label>
+                        <input type="number" id="cfg-SANDBOX_TIMEOUT" min="1" max="60" step="1">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.batch_size">Default Batch Size</label>
+                        <input type="number" id="cfg-DEFAULT_BATCH_SIZE" min="1" max="1024">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.status_interval">Training Status Interval (s)</label>
+                        <input type="number" id="cfg-TRAINING_STATUS_INTERVAL" min="0.1" max="10" step="0.1">
+                    </div>
+                </div>
+            </div>
+            <div class="settings-footer">
+                <button class="btn btn-ghost" id="btn-settings-reset" data-i18n="settings.reset_defaults">Reset Defaults</button>
+                <button class="btn btn-primary" id="btn-settings-save" data-i18n="settings.save">Save</button>
+            </div>
         </div>
     </div>
 
     <!-- Hessian warning modal -->
     <div class="modal-overlay" id="hessian-modal">
         <div class="modal">
-            <h3>Large Model Warning</h3>
-            <p id="hessian-modal-text">The model has many parameters. Full Hessian computation may be slow or fail. Use diagonal approximation?</p>
+            <h3 data-i18n="modal.hessian_warning">Large Model Warning</h3>
+            <p id="hessian-modal-text" data-i18n="modal.hessian_warning_text">The model has many parameters. Full Hessian computation may be slow or fail. Use diagonal approximation?</p>
             <div class="btn-row">
-                <button class="btn btn-ghost" id="hessian-cancel">Cancel</button>
-                <button class="btn btn-ghost" id="hessian-diag">Diagonal</button>
-                <button class="btn btn-primary" id="hessian-full">Full Hessian</button>
+                <button class="btn btn-ghost" id="hessian-cancel" data-i18n="btn.cancel">Cancel</button>
+                <button class="btn btn-ghost" id="hessian-diag" data-i18n="btn.diagonal">Diagonal</button>
+                <button class="btn btn-primary" id="hessian-full" data-i18n="btn.full_hessian">Full Hessian</button>
             </div>
         </div>
     </div>

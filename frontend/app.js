@@ -49,6 +49,7 @@ class WebSocketManager {
 
     _setStatus(s) {
         this.status = s;
+        document.getElementById('status-text').textContent = t('status.' + s);
         if (this.onStatusChange) this.onStatusChange(s);
     }
 
@@ -201,10 +202,10 @@ class VisualizationPanel {
 
     _getDiv(tab) { return document.getElementById(this._plotIds[tab]); }
 
-    showEmpty(tab, message = 'No data yet') {
+    showEmpty(tab, message) {
         const div = this._getDiv(tab);
         Plotly.purge(div);
-        div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">${message}</div>`;
+        div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">${message || t('plot.no_data')}</div>`;
         if (tab === 'hessian') {
             this._hessianData = null;
             this._hessianDiagToggled = false;
@@ -218,14 +219,14 @@ class VisualizationPanel {
         const traces = [{
             y: lossHistory,
             mode: 'lines',
-            name: 'Loss',
+            name: t('plot.loss'),
             line: { color: '#89b4fa', width: 2 },
         }];
         if (accuracyHistory && accuracyHistory.length > 0) {
             traces.push({
                 y: accuracyHistory,
                 mode: 'lines',
-                name: 'Accuracy',
+                name: t('plot.accuracy'),
                 line: { color: '#a6e3a1', width: 2 },
                 yaxis: 'y2',
             });
@@ -235,9 +236,9 @@ class VisualizationPanel {
             plot_bgcolor: 'transparent',
             font: { color: '#cdd6f4', size: 11 },
             margin: { l: 40, r: 40, t: 10, b: 30 },
-            xaxis: { title: 'Step', color: '#8888aa', gridcolor: '#404070' },
-            yaxis: { title: 'Loss', color: '#8888aa', gridcolor: '#404070' },
-            yaxis2: { title: 'Accuracy %', color: '#a6e3a1', overlaying: 'y', side: 'right' },
+            xaxis: { title: t('plot.step'), color: '#8888aa', gridcolor: '#404070' },
+            yaxis: { title: t('plot.loss'), color: '#8888aa', gridcolor: '#404070' },
+            yaxis2: { title: t('plot.accuracy'), color: '#a6e3a1', overlaying: 'y', side: 'right' },
             showlegend: true,
             legend: { font: { size: 10 } },
         };
@@ -293,7 +294,7 @@ class VisualizationPanel {
             margin: { l: 120, r: 20, t: 30, b: 60 },
             xaxis: { tickvals: d.showTicks, ticktext: d.showText, tickangle: 45, tickfont: { size: 8 } },
             yaxis: { tickvals: d.showTicks, ticktext: d.showText, autorange: 'reversed', tickfont: { size: 8 } },
-            title: this._hessianDiagToggled ? 'Diagonal Hessian' : (d.isDiag ? 'Diagonal Hessian' : 'Hessian Matrix'),
+            title: this._hessianDiagToggled ? t('plot.diagonal_hessian') : (d.isDiag ? t('plot.diagonal_hessian') : t('plot.hessian_matrix')),
             titlefont: { size: 12, color: '#cdd6f4' },
         };
         Plotly.react(div, [{
@@ -304,11 +305,10 @@ class VisualizationPanel {
             zmax: d.absMax,
         }], layout, { responsive: true });
 
-        // Update button state
         const btn = document.getElementById('btn-diag-toggle');
         if (btn) {
             btn.style.display = d.isDiag ? 'none' : 'block';
-            btn.textContent = this._hessianDiagToggled ? 'Show All' : 'Diagonal Only';
+            btn.textContent = this._hessianDiagToggled ? t('btn.diagonal_only') : t('btn.diagonal_only');
         }
     }
 
@@ -321,7 +321,7 @@ class VisualizationPanel {
             type: 'contour',
             colorscale: 'Viridis',
             contours: { coloring: 'heatmap' },
-            colorbar: { title: 'Loss' },
+            colorbar: { title: t('plot.loss') },
         }];
         if (trajectory && trajectory.x && trajectory.y) {
             traces.push({
@@ -339,10 +339,10 @@ class VisualizationPanel {
             plot_bgcolor: 'transparent',
             font: { color: '#cdd6f4', size: 11 },
             margin: { l: 40, r: 40, t: 30, b: 40 },
-            title: mode === 'pca' ? 'Loss Landscape (PCA)' : 'Loss Landscape (Random Directions)',
+            title: mode === 'pca' ? t('plot.loss_landscape_pca') : t('plot.loss_landscape_random'),
             titlefont: { size: 12, color: '#cdd6f4' },
-            xaxis: { title: 'Direction 1', color: '#8888aa' },
-            yaxis: { title: 'Direction 2', color: '#8888aa' },
+            xaxis: { title: t('plot.direction1'), color: '#8888aa' },
+            yaxis: { title: t('plot.direction2'), color: '#8888aa' },
         };
         Plotly.react(div, traces, layout, { responsive: true });
     }
@@ -363,10 +363,10 @@ class VisualizationPanel {
             plot_bgcolor: 'transparent',
             font: { color: '#cdd6f4', size: 11 },
             margin: { l: 40, r: 40, t: 30, b: 40 },
-            title: `Eigenvalues (min=${stats.min?.toFixed(3)}, max=${stats.max?.toFixed(3)}, cond=${stats.condition})`,
+            title: `${t('tab.eigenvalues')} (min=${stats.min?.toFixed(3)}, max=${stats.max?.toFixed(3)}, cond=${stats.condition})`,
             titlefont: { size: 12, color: '#cdd6f4' },
-            xaxis: { title: 'Eigenvalue', color: '#8888aa' },
-            yaxis: { title: 'Count', color: '#8888aa' },
+            xaxis: { title: t('plot.eigenvalue'), color: '#8888aa' },
+            yaxis: { title: t('plot.count'), color: '#8888aa' },
         };
         Plotly.react(div, traces, layout, { responsive: true });
         if (prevDisplay === 'none') div.style.display = 'none';
@@ -375,7 +375,7 @@ class VisualizationPanel {
     showEquationResult(data) {
         const div = this._getDiv('equation');
         const traces = [{
-            x: ['Before', 'After'],
+            x: [t('plot.before'), t('plot.after')],
             y: [data.loss_before, data.loss_after],
             type: 'bar',
             marker: { color: ['#f38ba8', '#a6e3a1'] },
@@ -387,10 +387,115 @@ class VisualizationPanel {
             plot_bgcolor: 'transparent',
             font: { color: '#cdd6f4', size: 11 },
             margin: { l: 40, r: 40, t: 40, b: 40 },
-            title: `Newton Step (loss improved by ${data.loss_improvement?.toFixed(4)})`,
+            title: `${t('plot.newton_step')} (loss improved by ${data.loss_improvement?.toFixed(4)})`,
             titlefont: { size: 12, color: '#cdd6f4' },
         };
         Plotly.react(div, traces, layout, { responsive: true });
+    }
+}
+
+// ============================================================
+// Settings Panel
+// ============================================================
+class SettingsPanel {
+    constructor(ws, log) {
+        this.ws = ws;
+        this.log = log;
+        this._defaults = null;
+        this._setup();
+    }
+
+    _setup() {
+        const modal = document.getElementById('settings-modal');
+
+        document.getElementById('btn-settings').onclick = () => this._open();
+        document.getElementById('btn-settings-close').onclick = () => this._close();
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) this._close();
+        });
+
+        // Tab switching
+        document.querySelectorAll('.settings-tab').forEach(tab => {
+            tab.onclick = () => {
+                const stab = tab.dataset.stab;
+                document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('settings-page-language').style.display = stab === 'language' ? 'block' : 'none';
+                document.getElementById('settings-page-params').style.display = stab === 'params' ? 'block' : 'none';
+            };
+        });
+
+        // Language selector
+        document.getElementById('settings-lang').onchange = (e) => {
+            setLanguage(e.target.value);
+        };
+
+        // Save
+        document.getElementById('btn-settings-save').onclick = () => this._save();
+        // Reset
+        document.getElementById('btn-settings-reset').onclick = () => this._reset();
+    }
+
+    async _open() {
+        document.getElementById('settings-lang').value = getLanguage();
+        document.getElementById('settings-modal').classList.add('show');
+        try {
+            const config = await this.ws.send('get_config', {}, 5000);
+            this._defaults = config;
+            this._populate(config);
+            this.log.debug(t('settings.loaded'));
+        } catch (e) {
+            this.log.warn(t('settings.error_load') + ': ' + e.message);
+        }
+    }
+
+    _close() {
+        document.getElementById('settings-modal').classList.remove('show');
+    }
+
+    _populate(config) {
+        for (const [key, value] of Object.entries(config)) {
+            const el = document.getElementById('cfg-' + key);
+            if (el) el.value = value;
+        }
+    }
+
+    _readConfig() {
+        const updates = {};
+        const inputs = document.querySelectorAll('[id^="cfg-"]');
+        for (const inp of inputs) {
+            const key = inp.id.replace('cfg-', '');
+            const raw = inp.value.trim();
+            if (raw === '') continue;
+            const num = Number(raw);
+            updates[key] = Number.isNaN(num) ? raw : num;
+        }
+        return updates;
+    }
+
+    async _save() {
+        const updates = this._readConfig();
+        try {
+            const result = await this.ws.send('update_config', { updates }, 5000);
+            this._populate(result);
+            this.log.info(t('settings.saved'));
+            this._close();
+        } catch (e) {
+            this.log.error(t('settings.error_save') + ': ' + e.message);
+        }
+    }
+
+    async _reset() {
+        if (this._defaults) {
+            this._populate(this._defaults);
+        }
+        try {
+            const result = await this.ws.send('update_config', { updates: this._readConfig() }, 5000);
+            this._populate(result);
+            this.log.info(t('settings.reset'));
+        } catch (e) {
+            this.log.error(t('settings.error_save') + ': ' + e.message);
+        }
     }
 }
 
@@ -441,6 +546,7 @@ class App {
             defaultValue: presets.mlp,
         });
         this.vis = new VisualizationPanel();
+        this.settings = new SettingsPanel(this.ws, this.log);
 
         this.state = {
             hasModel: false,
@@ -468,10 +574,7 @@ class App {
     _setupListeners() {
         // Connection status
         this.ws.onStatusChange = (status) => {
-            const dot = document.getElementById('status-dot');
-            const txt = document.getElementById('status-text');
-            dot.className = 'status-dot ' + status;
-            txt.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            document.getElementById('status-dot').className = 'status-dot ' + status;
         };
 
         // Push messages
@@ -750,6 +853,7 @@ class App {
         if (this.state.paramCount > 10000 && forceDiag === null) {
             document.getElementById('hessian-modal-text').textContent =
                 `Model has ${this.state.paramCount} parameters. Full Hessian needs ~${(this.state.paramCount * this.state.paramCount * 8 / 1024 / 1024).toFixed(0)} MB. Use diagonal instead?`;
+            // Keep data-i18n as fallback; dynamic text overrides it
             document.getElementById('hessian-modal').classList.add('show');
             return;
         }
@@ -894,6 +998,7 @@ class App {
 // Boot
 // ============================================================
 (async () => {
+    setLanguage(getLanguage());
     const app = await App.init();
     app._setButtons(false);
     document.getElementById('btn-train').disabled = true;
