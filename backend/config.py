@@ -1,0 +1,28 @@
+"""Configuration constants for Hessian Playground."""
+
+# Parameter limits
+MAX_PARAM_COUNT_WARN = 10_000
+MAX_PARAM_COUNT_DIAGONAL = 10_000
+HARD_PARAM_LIMIT = 1_000_000
+
+# Hessian display
+HESSIAN_DISPLAY_MAX_SIZE = 200
+
+# Landscape
+MAX_GRID_RESOLUTION = 50
+MIN_SNAPSHOTS_FOR_PCA = 3
+
+# Sandbox
+SANDBOX_TIMEOUT = 5
+
+# Training
+DEFAULT_BATCH_SIZE = 64
+TRAINING_STATUS_INTERVAL = 0.5
+
+# Server
+DEFAULT_PORT = 8080
+DEFAULT_HOST = "0.0.0.0"
+MAX_CONNECTIONS = 10
+
+# Data
+DATASET_CACHE_DIR = "./data"

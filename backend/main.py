@@ -1,0 +1,65 @@
+"""Entry point for Hessian Playground server.
+
+Run with: python backend/main.py [--host HOST] [--port PORT]
+"""
+
+import argparse
+import asyncio
+import os
+import signal
+import sys
+
+# Ensure project root is on sys.path for absolute imports
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from aiohttp import web
+
+from backend.config import DEFAULT_HOST, DEFAULT_PORT
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Hessian Playground Server")
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    args = parser.parse_args()
+
+    from backend.server import create_app
+
+    app = create_app()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    runner = None
+
+    def shutdown():
+        if runner is not None:
+            loop.create_task(runner.cleanup())
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown)
+        except NotImplementedError:
+            signal.signal(sig, lambda s, f: shutdown())
+
+    async def run():
+        nonlocal runner
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, args.host, args.port)
+        await site.start()
+        print(f"Hessian Playground running at http://{args.host}:{args.port}")
+
+    try:
+        loop.run_until_complete(run())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+
+
+if __name__ == "__main__":
+    main()

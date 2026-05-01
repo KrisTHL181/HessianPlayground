@@ -1,0 +1,38 @@
+"""aiohttp application setup and WebSocket routing."""
+
+import os
+import sys
+
+from aiohttp import web
+
+# Ensure project root on sys.path
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from backend.config import DATASET_CACHE_DIR
+
+
+def create_app():
+    app = web.Application()
+
+    os.makedirs(DATASET_CACHE_DIR, exist_ok=True)
+
+    frontend_dir = os.path.join(_project_root, "frontend")
+    app.router.add_get("/", lambda req: web.FileResponse(os.path.join(frontend_dir, "index.html")))
+
+    from backend.ws_handler import ws_handler
+    app.router.add_get("/ws", ws_handler)
+
+    app.on_shutdown.append(_on_shutdown)
+    return app
+
+
+async def _on_shutdown(app):
+    from backend.ws_handler import active_sessions
+    for ws, _ in list(active_sessions.items()):
+        try:
+            await ws.close(code=1001, message=b"Server shutting down")
+        except Exception:
+            pass
+    active_sessions.clear()
