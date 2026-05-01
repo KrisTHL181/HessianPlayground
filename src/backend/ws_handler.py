@@ -12,6 +12,7 @@ import backend.config as cfg
 from backend.protocol import (
     VALID_REQUEST_TYPES,
     PUSH_TYPES,
+    make_push,
     make_response,
     make_error,
     make_status,
@@ -21,6 +22,15 @@ from backend.session import Session
 
 
 active_sessions: dict[web.WebSocketResponse, Session] = {}
+_remote_executor = None  # singleton RemoteExecutor, created on first connect_remote request
+
+
+def _get_remote():
+    global _remote_executor
+    if _remote_executor is None:
+        from backend.remote import RemoteExecutor
+        _remote_executor = RemoteExecutor()
+    return _remote_executor
 
 
 async def ws_handler(request):
@@ -68,6 +78,9 @@ ROUTER = {
     "adapt_model": "_handle_adapt_model",
     "get_config": "_handle_get_config",
     "update_config": "_handle_update_config",
+    "connect_remote": "_handle_connect_remote",
+    "disconnect_remote": "_handle_disconnect_remote",
+    "get_remote_status": "_handle_get_remote_status",
 }
 
 
@@ -153,7 +166,12 @@ class _Dispatcher:
         if param_count > cfg.HARD_PARAM_LIMIT:
             raise ValueError(f"Model has {param_count} params, exceeds limit of {cfg.HARD_PARAM_LIMIT}")
 
+        # Move model to configured device
+        device = torch.device(cfg.DEVICE)
+        model = model.to(device)
+
         session.model = model
+        session.model_code = code
         session._param_count = param_count
         session.invalidate_cache()
 
@@ -168,6 +186,7 @@ class _Dispatcher:
             "num_trainable": param_count,
             "parameter_shapes": param_shapes,
             "architecture": arch_summary,
+            "device": cfg.DEVICE,
         }
 
     @staticmethod
@@ -302,9 +321,13 @@ class _Dispatcher:
         if session.train_loader is None:
             raise ValueError("Set a dataset first")
 
-        from backend.training import run_training
-        session._stop_training_flag = False
-        session.training_task = asyncio.ensure_future(run_training(session, payload, ws))
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            session._stop_training_flag = False
+            session.training_task = asyncio.ensure_future(_run_remote_training(session, payload, ws))
+        else:
+            from backend.training import run_training
+            session._stop_training_flag = False
+            session.training_task = asyncio.ensure_future(run_training(session, payload, ws))
         return {"status": "started"}
 
     @staticmethod
@@ -344,13 +367,18 @@ class _Dispatcher:
             H, is_diag = session._cached_hessian
         else:
             n = session.param_count
-            warn_params = n > cfg.MAX_PARAM_COUNT_WARN
             if n > cfg.MAX_PARAM_COUNT_DIAGONAL and not use_diag:
                 await ws.send_json(make_status("warning",
                     f"Model has {n} parameters. Full Hessian would require significant memory. Using diagonal approximation."))
                 use_diag = True
 
-            if use_diag:
+            if cfg.REMOTE_ENABLED and _get_remote().connected:
+                loop = asyncio.get_event_loop()
+                remote = _get_remote()
+                H, is_diag = await loop.run_in_executor(
+                    None, remote.compute_hessian, session, use_diag, sample_batches)
+                H = H.to(torch.device(cfg.DEVICE))
+            elif use_diag:
                 H = compute_diagonal_hessian(session)
                 is_diag = True
             else:
@@ -358,12 +386,14 @@ class _Dispatcher:
                 is_diag = False
             session._cached_hessian = (H, is_diag)
 
-        display_matrix, dim_labels = hessian_to_display_matrix(H, is_diag, session.model)
+        # Move Hessian to CPU for display / JSON serialization
+        H_cpu = H.cpu() if H.ndim > 1 else H.cpu()
+        display_matrix, dim_labels = hessian_to_display_matrix(H_cpu, is_diag, session.model)
 
         return {
             "num_parameters": session.param_count,
             "is_diagonal": is_diag,
-            "hessian_matrix": display_matrix.tolist(),
+            "hessian_matrix": display_matrix.tolist() if hasattr(display_matrix, 'tolist') else display_matrix,
             "hessian_shape": list(display_matrix.shape),
             "display_type": "block_averaged" if display_matrix.shape[0] < session.param_count else "full",
             "dim_labels": dim_labels,
@@ -371,46 +401,76 @@ class _Dispatcher:
 
     @staticmethod
     async def _handle_compute_eigenvalues(session, payload, ws):
-        from backend.hessian import compute_eigenvalues as compute_ev
-
         if session._cached_hessian is None:
             raise ValueError("Compute Hessian first")
 
         H, is_diag = session._cached_hessian
         method = payload.get("method", "exact" if not is_diag else "diagonal")
-        result = compute_ev(H, method, is_diag)
+
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            loop = asyncio.get_event_loop()
+            remote = _get_remote()
+            result = await loop.run_in_executor(None, remote.compute_eigenvalues, session, method)
+        else:
+            from backend.hessian import compute_eigenvalues as compute_ev
+            result = compute_ev(H.cpu() if H is not None else H, method, is_diag)
+
         session._cached_eigenvalues = result
         return result
 
     @staticmethod
     async def _handle_compute_pca_landscape(session, payload, ws):
         _ensure_loss_fn(session)
-        from backend.landscape import compute_pca_landscape
         resolution = min(payload.get("grid_resolution", 30), 50)
         range_factor = payload.get("range_factor", 2.0)
+
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            loop = asyncio.get_event_loop()
+            remote = _get_remote()
+            return await loop.run_in_executor(
+                None, lambda: remote.compute_landscape_sync(session, resolution, range_factor, "pca", None))
+
+        from backend.landscape import compute_pca_landscape
         return await compute_pca_landscape(session, resolution, range_factor, ws)
 
     @staticmethod
     async def _handle_compute_random_landscape(session, payload, ws):
         _ensure_loss_fn(session)
-        from backend.landscape import compute_random_landscape
         resolution = min(payload.get("grid_resolution", 30), 50)
         range_factor = payload.get("range_factor", 2.0)
         seed = payload.get("seed", None)
+
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            loop = asyncio.get_event_loop()
+            remote = _get_remote()
+            return await loop.run_in_executor(
+                None, lambda: remote.compute_landscape_sync(session, resolution, range_factor, "random", seed))
+
+        from backend.landscape import compute_random_landscape
         return await compute_random_landscape(session, resolution, range_factor, seed, ws)
 
     @staticmethod
     async def _handle_solve_newton_step(session, payload, ws):
         _ensure_loss_fn(session)
-        from backend.equations import solve_newton
         reg = payload.get("regularization", 1e-4)
         apply_step = payload.get("apply_step", True)
         step_scale = payload.get("step_scale", 1.0)
+
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            loop = asyncio.get_event_loop()
+            remote = _get_remote()
+            return await loop.run_in_executor(
+                None, remote.solve_newton, session, reg, apply_step, step_scale)
+
+        from backend.equations import solve_newton
         return solve_newton(session, reg, apply_step, step_scale, ws)
 
     @staticmethod
     async def _handle_solve_linear_system(session, payload, ws):
         _ensure_loss_fn(session)
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            raise ValueError("Linear system solving not yet supported in remote mode")
+
         from backend.equations import solve_linear
         rhs = payload.get("right_hand_side", None)
         reg = payload.get("regularization", 0.0)
@@ -542,3 +602,57 @@ class _Dispatcher:
         if not updates:
             raise ValueError("No config updates provided")
         return cfg.update_runtime_config(updates)
+
+    @staticmethod
+    async def _handle_connect_remote(session, payload, ws):
+        loop = asyncio.get_event_loop()
+        remote = _get_remote()
+        if remote.connected:
+            await loop.run_in_executor(None, remote.disconnect)
+        msg = await loop.run_in_executor(None, remote.connect)
+        return {"status": "connected", "message": msg}
+
+    @staticmethod
+    async def _handle_disconnect_remote(session, payload, ws):
+        loop = asyncio.get_event_loop()
+        remote = _get_remote()
+        if remote.connected:
+            await loop.run_in_executor(None, remote.disconnect)
+        return {"status": "disconnected"}
+
+    @staticmethod
+    async def _handle_get_remote_status(session, payload, ws):
+        remote = _get_remote()
+        return {
+            "connected": remote.connected,
+            "remote_device": remote.remote_device,
+        }
+
+
+async def _run_remote_training(session, payload, ws):
+    """Run training remotely with progress push messages."""
+    remote = _get_remote()
+    try:
+        result = remote.run_training(session, payload)
+
+        # Build a simplified training_complete response
+        r = result.get("result", result)
+        loss_history = r.get("loss_history", [])
+        final_loss = r.get("final_loss", 0.0)
+
+        await ws.send_json(make_push("training_complete", {
+            "final_loss": final_loss,
+            "final_train_accuracy": None,
+            "final_test_accuracy": None,
+            "loss_history": loss_history,
+            "accuracy_history": [],
+            "param_snapshots_saved": len(session.param_snapshots),
+            "total_epochs_completed": payload.get("epochs", 5),
+            "total_batches_completed": 0,
+            "elapsed_seconds": 0,
+        }))
+    except Exception as e:
+        from backend.protocol import make_error
+        await ws.send_json(make_error(None, "TRAINING_FAILED", str(e)))
+    finally:
+        session._stop_training_flag = False

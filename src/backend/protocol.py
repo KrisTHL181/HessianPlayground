@@ -19,6 +19,9 @@ VALID_REQUEST_TYPES = {
     "adapt_model",
     "get_config",
     "update_config",
+    "connect_remote",
+    "disconnect_remote",
+    "get_remote_status",
 }
 
 RESPONSE_TYPES = {

@@ -22,6 +22,7 @@ class WebSocketManager {
         this.listeners = new Map(); // type -> Set<callback>
         this.msgCounter = 0;
         this.onStatusChange = null;
+        this._computeDevice = null; // "local_cpu" | "local_cuda" | "remote_cpu" | "remote_cuda"
         this._connect();
     }
 
@@ -49,8 +50,22 @@ class WebSocketManager {
 
     _setStatus(s) {
         this.status = s;
-        document.getElementById('status-text').textContent = t('status.' + s);
+        this.updateStatusText();
         if (this.onStatusChange) this.onStatusChange(s);
+    }
+
+    setComputeDevice(device) {
+        this._computeDevice = device;
+        this.updateStatusText();
+    }
+
+    updateStatusText() {
+        if (this.status === 'connected' && this._computeDevice) {
+            const key = 'status.connected_' + this._computeDevice;
+            document.getElementById('status-text').textContent = t(key);
+        } else {
+            document.getElementById('status-text').textContent = t('status.' + this.status);
+        }
     }
 
     _scheduleReconnect() {
@@ -398,10 +413,13 @@ class VisualizationPanel {
 // Settings Panel
 // ============================================================
 class SettingsPanel {
-    constructor(ws, log) {
+    constructor(ws, log, onRemoteChange) {
         this.ws = ws;
         this.log = log;
         this._defaults = null;
+        this._remoteConnected = false;
+        this._cudaAvailable = false;
+        this._onRemoteChange = onRemoteChange || null;
         this._setup();
     }
 
@@ -420,14 +438,26 @@ class SettingsPanel {
                 const stab = tab.dataset.stab;
                 document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
-                document.getElementById('settings-page-language').style.display = stab === 'language' ? 'block' : 'none';
-                document.getElementById('settings-page-params').style.display = stab === 'params' ? 'block' : 'none';
+                document.querySelectorAll('.settings-page').forEach(p => p.style.display = 'none');
+                const page = document.getElementById('settings-page-' + stab);
+                if (page) page.style.display = 'block';
             };
         });
 
         // Language selector
         document.getElementById('settings-lang').onchange = (e) => {
             setLanguage(e.target.value);
+            this.ws.updateStatusText();
+        };
+
+        // Remote connect/disconnect
+        document.getElementById('btn-remote-connect').onclick = () => this._remoteConnect();
+        document.getElementById('btn-remote-disconnect').onclick = () => this._remoteDisconnect();
+
+        // SSH command parse
+        document.getElementById('btn-parse-ssh').onclick = () => this._parseSSHCommand();
+        document.getElementById('ssh-command-input').onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); this._parseSSHCommand(); }
         };
 
         // Save
@@ -438,11 +468,17 @@ class SettingsPanel {
 
     async _open() {
         document.getElementById('settings-lang').value = getLanguage();
+        // Reset to first tab
+        document.querySelectorAll('.settings-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+        document.querySelectorAll('.settings-page').forEach((p, i) => p.style.display = i === 0 ? 'block' : 'none');
         document.getElementById('settings-modal').classList.add('show');
         try {
             const config = await this.ws.send('get_config', {}, 5000);
             this._defaults = config;
             this._populate(config);
+            this._cudaAvailable = config.CUDA_AVAILABLE;
+            this._updateCudaStatus();
+            this._updateRemoteStatus();
             this.log.debug(t('settings.loaded'));
         } catch (e) {
             this.log.warn(t('settings.error_load') + ': ' + e.message);
@@ -456,7 +492,15 @@ class SettingsPanel {
     _populate(config) {
         for (const [key, value] of Object.entries(config)) {
             const el = document.getElementById('cfg-' + key);
-            if (el) el.value = value;
+            if (el) {
+                if (el.tagName === 'SELECT' || el.type === 'password') {
+                    el.value = String(value);
+                } else if (el.type === 'number') {
+                    el.value = value;
+                } else {
+                    el.value = value;
+                }
+            }
         }
     }
 
@@ -467,10 +511,152 @@ class SettingsPanel {
             const key = inp.id.replace('cfg-', '');
             const raw = inp.value.trim();
             if (raw === '') continue;
-            const num = Number(raw);
-            updates[key] = Number.isNaN(num) ? raw : num;
+            if (inp.tagName === 'SELECT') {
+                const val = inp.value;
+                updates[key] = (val === 'true') ? true : (val === 'false') ? false : val;
+            } else if (inp.type === 'number') {
+                const num = Number(raw);
+                updates[key] = Number.isNaN(num) ? raw : num;
+            } else {
+                updates[key] = raw;
+            }
         }
         return updates;
+    }
+
+    _updateCudaStatus() {
+        const sel = document.getElementById('cfg-DEVICE');
+        const statusEl = document.getElementById('cuda-status-text');
+        if (this._cudaAvailable) {
+            statusEl.textContent = t('settings.cuda_available');
+            statusEl.style.color = 'var(--green)';
+            if (sel) {
+                sel.querySelector('option[value="cuda"]').disabled = false;
+            }
+        } else {
+            statusEl.textContent = t('settings.cuda_unavailable');
+            statusEl.style.color = 'var(--text-dim)';
+            if (sel) {
+                sel.querySelector('option[value="cuda"]').disabled = true;
+                sel.value = 'cpu';
+            }
+        }
+    }
+
+    _updateRemoteStatus() {
+        const statusEl = document.getElementById('remote-status-text');
+        const connectBtn = document.getElementById('btn-remote-connect');
+        const disconnectBtn = document.getElementById('btn-remote-disconnect');
+        if (this._remoteConnected) {
+            statusEl.textContent = t('settings.remote_connected');
+            statusEl.style.color = 'var(--green)';
+            if (connectBtn) connectBtn.disabled = true;
+            if (disconnectBtn) disconnectBtn.disabled = false;
+        } else {
+            statusEl.textContent = t('settings.remote_disconnected');
+            statusEl.style.color = 'var(--text-dim)';
+            if (connectBtn) connectBtn.disabled = false;
+            if (disconnectBtn) disconnectBtn.disabled = true;
+        }
+    }
+
+    async _remoteConnect() {
+        // Save remote config first
+        const configBefore = this._readConfig();
+        try {
+            await this.ws.send('update_config', { updates: configBefore }, 5000);
+        } catch (e) {
+            this.log.error(t('settings.error_save') + ': ' + e.message);
+            return;
+        }
+
+        const statusEl = document.getElementById('remote-status-text');
+        statusEl.textContent = t('settings.remote_connecting');
+        statusEl.style.color = 'var(--orange)';
+
+        try {
+            const result = await this.ws.send('connect_remote', {}, 15000);
+            this._remoteConnected = true;
+            this._updateRemoteStatus();
+            if (this._onRemoteChange) this._onRemoteChange();
+            this.log.info(result.message || t('settings.remote_connected'));
+        } catch (e) {
+            this._remoteConnected = false;
+            this._updateRemoteStatus();
+            statusEl.textContent = t('settings.remote_error') + ': ' + e.message;
+            statusEl.style.color = 'var(--red)';
+            this.log.error(t('settings.remote_error') + ': ' + e.message);
+        }
+    }
+
+    async _remoteDisconnect() {
+        try {
+            await this.ws.send('disconnect_remote', {}, 5000);
+            this._remoteConnected = false;
+            this._updateRemoteStatus();
+            if (this._onRemoteChange) this._onRemoteChange();
+            this.log.info(t('settings.remote_disconnected'));
+        } catch (e) {
+            this.log.error(t('settings.remote_error') + ': ' + e.message);
+        }
+    }
+
+    _parseSSHCommand() {
+        const input = document.getElementById('ssh-command-input').value.trim();
+        if (!input) return;
+
+        // Strip leading "ssh " if present
+        let s = input.replace(/^ssh\s+/, '');
+
+        let user = '';
+        let host = '';
+        let port = '';
+
+        // Extract -p port (before stripping other flags)
+        const portMatch = s.match(/(?:^|\s)-p\s+(\d+)\b/);
+        if (portMatch) {
+            port = portMatch[1];
+            s = s.replace(portMatch[0], ' ');
+        }
+
+        // Extract -l user
+        const userFlagMatch = s.match(/(?:^|\s)-l\s+(\S+)/);
+        if (userFlagMatch) {
+            user = userFlagMatch[1];
+            s = s.replace(userFlagMatch[0], ' ');
+        }
+
+        // Remove flags that take an argument: -i, -L, -R, -D, -o, -J, -S, -O
+        s = s.replace(/\s*-[iLRDoJS]\s+\S+/g, ' ');
+        // Remove boolean flags (stackable): -X, -A, -v, -q, -t, -T, -N, -f, -C, -4, -6, -g, -n, -E, -G, -K, -k, -s, -x, -Y, -y
+        s = s.replace(/\s*-[XAvqTtNfCgnEKGksxYy46]+\b/g, ' ');
+
+        // Extract user@host or plain host from remaining text
+        const tokens = s.trim().split(/\s+/);
+        for (const tok of tokens) {
+            const atIdx = tok.indexOf('@');
+            if (atIdx > 0) {
+                if (!user) user = tok.slice(0, atIdx);
+                host = tok.slice(atIdx + 1);
+            } else if (!tok.startsWith('-')) {
+                host = tok;
+            }
+        }
+
+        // Clean host — strip trailing colon+port (ssh user@host:22 format)
+        if (host) {
+            const colonPort = host.match(/^(.+):(\d+)$/);
+            if (colonPort) {
+                host = colonPort[1];
+                if (!port) port = colonPort[2];
+            }
+        }
+
+        if (host) document.getElementById('cfg-REMOTE_HOST').value = host;
+        if (user) document.getElementById('cfg-REMOTE_USER').value = user;
+        if (port) document.getElementById('cfg-REMOTE_PORT').value = port;
+
+        this.log.info(`Parsed SSH: ${user ? user + '@' : ''}${host}${port ? ' :' + port : ''}`);
     }
 
     async _save() {
@@ -546,7 +732,7 @@ class App {
             defaultValue: presets.mlp,
         });
         this.vis = new VisualizationPanel();
-        this.settings = new SettingsPanel(this.ws, this.log);
+        this.settings = new SettingsPanel(this.ws, this.log, () => this._refreshDeviceLabel());
 
         this.state = {
             hasModel: false,
@@ -575,6 +761,7 @@ class App {
         // Connection status
         this.ws.onStatusChange = (status) => {
             document.getElementById('status-dot').className = 'status-dot ' + status;
+            if (status === 'connected') this._refreshDeviceLabel();
         };
 
         // Push messages
@@ -706,6 +893,22 @@ class App {
         });
         document.getElementById('btn-train').disabled = !this.state.hasModel || this.state.training;
         document.getElementById('btn-stop').disabled = !this.state.training;
+    }
+
+    async _refreshDeviceLabel() {
+        try {
+            const config = await this.ws.send('get_config', {}, 5000);
+            const remoteStatus = await this.ws.send('get_remote_status', {}, 5000);
+            let device;
+            if (remoteStatus.connected && remoteStatus.remote_device) {
+                device = 'remote_' + remoteStatus.remote_device;
+            } else {
+                device = 'local_' + (config.DEVICE || 'cpu');
+            }
+            this.ws.setComputeDevice(device);
+        } catch (e) {
+            this.ws.setComputeDevice('local_cpu');
+        }
     }
 
     async _createModel() {

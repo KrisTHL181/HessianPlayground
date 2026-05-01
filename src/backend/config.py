@@ -1,5 +1,7 @@
 """Configuration for Hessian Playground — values are mutable at runtime."""
 
+import torch
+
 # Parameter limits
 MAX_PARAM_COUNT_WARN = 10_000
 MAX_PARAM_COUNT_DIAGONAL = 10_000
@@ -27,6 +29,18 @@ MAX_CONNECTIONS = 10
 # Data
 DATASET_CACHE_DIR = "./data"
 
+# CUDA / device
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+CUDA_AVAILABLE = torch.cuda.is_available()
+
+# Remote computing (SSH)
+REMOTE_ENABLED = False
+REMOTE_HOST = ""
+REMOTE_PORT = 22
+REMOTE_USER = ""
+REMOTE_PASSWORD = ""
+REMOTE_PYTHON = "python3"
+
 # Keys that can be changed at runtime via update_config
 _RUNTIME_CONFIG_KEYS = {
     "MAX_PARAM_COUNT_WARN",
@@ -38,6 +52,13 @@ _RUNTIME_CONFIG_KEYS = {
     "SANDBOX_TIMEOUT",
     "DEFAULT_BATCH_SIZE",
     "TRAINING_STATUS_INTERVAL",
+    "DEVICE",
+    "REMOTE_ENABLED",
+    "REMOTE_HOST",
+    "REMOTE_PORT",
+    "REMOTE_USER",
+    "REMOTE_PASSWORD",
+    "REMOTE_PYTHON",
 }
 
 _DEFAULTS = {k: None for k in _RUNTIME_CONFIG_KEYS}
@@ -47,7 +68,9 @@ for _k in _RUNTIME_CONFIG_KEYS:
 
 def get_runtime_config():
     """Return all runtime-changeable config values."""
-    return {k: globals()[k] for k in _RUNTIME_CONFIG_KEYS}
+    result = {k: globals()[k] for k in _RUNTIME_CONFIG_KEYS}
+    result["CUDA_AVAILABLE"] = CUDA_AVAILABLE
+    return result
 
 
 def update_runtime_config(updates):
@@ -63,7 +86,12 @@ def update_runtime_config(updates):
         elif isinstance(default_val, float):
             globals()[k] = float(v)
         else:
-            globals()[k] = v
+            globals()[k] = str(v) if not isinstance(v, str) else v
+
+    # Validate device
+    if globals().get("DEVICE") == "cuda" and not CUDA_AVAILABLE:
+        globals()["DEVICE"] = "cpu"
+
     return get_runtime_config()
 
 

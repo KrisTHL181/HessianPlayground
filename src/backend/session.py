@@ -37,6 +37,20 @@ class Session:
 
         self._param_count = 0
 
+        self._model_code: str = ""
+
+    @property
+    def device(self) -> torch.device:
+        return torch.device(cfg.DEVICE)
+
+    @property
+    def model_code(self) -> str:
+        return self._model_code
+
+    @model_code.setter
+    def model_code(self, code: str):
+        self._model_code = code
+
     def invalidate_cache(self):
         self._cached_hessian = None
         self._cached_gradient = None

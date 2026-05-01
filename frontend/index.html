@@ -27,7 +27,7 @@
         <h1 data-i18n="app.title">Hessian Playground</h1>
         <div style="display:flex;align-items:center;gap:12px">
             <span class="status-dot connecting" id="status-dot"></span>
-            <span id="status-text" style="font-size:13px" data-i18n="status.connecting">Connecting...</span>
+            <span id="status-text" style="font-size:13px">Connecting...</span>
             <button class="btn-icon" id="btn-settings" data-i18n-title="header.settings" title="Settings">⚙</button>
         </div>
     </div>
@@ -191,6 +191,8 @@
             </div>
             <div class="settings-tabs">
                 <div class="settings-tab active" data-stab="language" data-i18n="settings.language">Language</div>
+                <div class="settings-tab" data-stab="compute" data-i18n="settings.compute">Compute</div>
+                <div class="settings-tab" data-stab="remote" data-i18n="settings.remote">Remote</div>
                 <div class="settings-tab" data-stab="params" data-i18n="settings.parameters">Parameters</div>
             </div>
             <div class="settings-body">
@@ -202,6 +204,59 @@
                             <option value="zh">中文</option>
                         </select>
                     </div>
+                </div>
+                <div class="settings-page" id="settings-page-compute" style="display:none">
+                    <div class="config-group">
+                        <label data-i18n="settings.device">Compute Device</label>
+                        <select id="cfg-DEVICE">
+                            <option value="cpu">CPU</option>
+                            <option value="cuda">CUDA (GPU)</option>
+                        </select>
+                        <p style="font-size:11px;color:var(--text-dim);margin-top:4px" id="cuda-status-text"></p>
+                    </div>
+                </div>
+                <div class="settings-page" id="settings-page-remote" style="display:none">
+                    <div class="config-group">
+                        <label data-i18n="settings.ssh_command">SSH Command</label>
+                        <div style="display:flex;gap:6px">
+                            <input type="text" id="ssh-command-input" style="flex:1;font-family:var(--mono);font-size:12px"
+                                placeholder="ssh user@host -p 22" data-i18n-placeholder="placeholder.ssh_command">
+                            <button class="btn btn-ghost" id="btn-parse-ssh" data-i18n="btn.parse_ssh">Parse</button>
+                        </div>
+                    </div>
+                    <hr style="border-color:var(--border);margin-bottom:10px">
+                    <div class="config-group">
+                        <label data-i18n="settings.remote_enable">Enable Remote Computing</label>
+                        <select id="cfg-REMOTE_ENABLED">
+                            <option value="false" data-i18n="opt.disabled">Disabled</option>
+                            <option value="true" data-i18n="opt.enabled">Enabled</option>
+                        </select>
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.remote_host">Host</label>
+                        <input type="text" id="cfg-REMOTE_HOST" placeholder="e.g. 192.168.1.100">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.remote_port">Port</label>
+                        <input type="number" id="cfg-REMOTE_PORT" value="22" min="1" max="65535">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.remote_user">Username</label>
+                        <input type="text" id="cfg-REMOTE_USER" placeholder="root">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.remote_password">Password</label>
+                        <input type="password" id="cfg-REMOTE_PASSWORD" placeholder="••••••••">
+                    </div>
+                    <div class="config-group">
+                        <label data-i18n="settings.remote_python">Remote Python</label>
+                        <input type="text" id="cfg-REMOTE_PYTHON" value="python3" placeholder="python3">
+                    </div>
+                    <div class="btn-row" style="margin-top:12px">
+                        <button class="btn btn-green" id="btn-remote-connect" data-i18n="btn.connect">Connect</button>
+                        <button class="btn btn-danger" id="btn-remote-disconnect" data-i18n="btn.disconnect" disabled>Disconnect</button>
+                    </div>
+                    <p style="font-size:11px;margin-top:8px" id="remote-status-text"></p>
                 </div>
                 <div class="settings-page" id="settings-page-params" style="display:none">
                     <div class="settings-section-label" data-i18n="settings.param_limits">Parameter Limits</div>
