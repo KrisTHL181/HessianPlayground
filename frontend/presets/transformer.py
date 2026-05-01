@@ -22,14 +22,16 @@ class TransformerBlock(torch.nn.Module):
 class TransformerMLP(torch.nn.Module):
     def __init__(self, input_size, hidden_sizes, output_size):
         super().__init__()
-        self.input_proj = torch.nn.Linear(input_size, hidden_sizes[0])
-        self.pos_embed = torch.nn.Parameter(torch.randn(1, 1, hidden_sizes[0]) * 0.02)
+        d_model = hidden_sizes[0]
+        num_layers = len(hidden_sizes)
+        self.input_proj = torch.nn.Linear(input_size, d_model)
+        self.pos_embed = torch.nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
 
         blocks = []
-        for i, h in enumerate(hidden_sizes):
-            blocks.append(TransformerBlock(h, num_heads=4, ff_dim=h * 4, dropout=0.1))
+        for _ in range(num_layers):
+            blocks.append(TransformerBlock(d_model, num_heads=4, ff_dim=d_model * 4, dropout=0.1))
         self.blocks = torch.nn.ModuleList(blocks)
-        self.output = torch.nn.Linear(hidden_sizes[-1], output_size)
+        self.output = torch.nn.Linear(d_model, output_size)
 
     def forward(self, x):
         x = x.view(x.size(0), -1).unsqueeze(1)  # (B, 1, D)
