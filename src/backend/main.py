@@ -34,8 +34,12 @@ def main():
     runner = None
 
     def shutdown():
-        if runner is not None:
-            loop.create_task(runner.cleanup())
+        async def _shutdown():
+            if runner is not None:
+                await runner.cleanup()
+            loop.stop()
+
+        loop.create_task(_shutdown())
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
