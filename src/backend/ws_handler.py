@@ -146,7 +146,7 @@ class _Dispatcher:
         hidden_sizes = payload.get("hidden_sizes", [128, 64])
         output_size = payload.get("output_size", 10)
 
-        model, arch_summary, param_count = instantiate_model(code, model_name, input_size, hidden_sizes, output_size)
+        model, arch_summary, param_count, warning = instantiate_model(code, model_name, input_size, hidden_sizes, output_size)
 
         if param_count > HARD_PARAM_LIMIT:
             raise ValueError(f"Model has {param_count} params, exceeds limit of {HARD_PARAM_LIMIT}")
@@ -154,6 +154,9 @@ class _Dispatcher:
         session.model = model
         session._param_count = param_count
         session.invalidate_cache()
+
+        if warning:
+            await ws.send_json(make_status("warning", warning))
 
         param_shapes = {name: list(p.shape) for name, p in model.named_parameters()}
 

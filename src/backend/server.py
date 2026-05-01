@@ -21,6 +21,7 @@ def create_app():
 
     frontend_dir = os.path.join(_project_root, "frontend")
     app.router.add_get("/", lambda req: web.FileResponse(os.path.join(frontend_dir, "index.html")))
+    app.router.add_static("/static/", frontend_dir, show_index=False)
 
     from backend.ws_handler import ws_handler
     app.router.add_get("/ws", ws_handler)
