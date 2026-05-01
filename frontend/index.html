@@ -167,8 +167,19 @@ body {
 .vis-content {
   flex: 1;
   min-height: 0;
+  position: relative;
 }
-.vis-content > div { width: 100%; height: 100%; }
+.vis-content > div { width: 100%; height: 100%; position: relative; }
+.hessian-diag-btn {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  z-index: 10;
+  padding: 4px 10px;
+  font-size: 11px;
+  background: rgba(30, 30, 46, 0.85);
+  border-radius: 4px;
+}
 
 /* Log panel */
 #log-panel {
@@ -394,6 +405,7 @@ body {
         <div id="plot-landscape" style="display:none"></div>
         <div id="plot-eigenvalues" style="display:none"></div>
         <div id="plot-equation" style="display:none"></div>
+        <button class="btn btn-ghost hessian-diag-btn" id="btn-diag-toggle" style="display:none" title="Highlight only diagonal elements">Diagonal Only</button>
       </div>
     </div>
   </div>
@@ -636,6 +648,11 @@ class VisualizationPanel {
         for (const [tab, id] of Object.entries(this._plotIds)) {
             document.getElementById(id).style.display = (tab === tabId) ? 'block' : 'none';
         }
+        // Show/hide diagonal toggle button
+        const btn = document.getElementById('btn-diag-toggle');
+        if (btn) {
+            btn.style.display = (tabId === 'hessian' && this._hessianData && !this._hessianData.isDiag) ? 'block' : 'none';
+        }
         // Trigger resize on the newly visible plot
         setTimeout(() => {
             const el = document.getElementById(this._plotIds[tabId]);
@@ -649,6 +666,12 @@ class VisualizationPanel {
         const div = this._getDiv(tab);
         Plotly.purge(div);
         div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">${message}</div>`;
+        if (tab === 'hessian') {
+            this._hessianData = null;
+            this._hessianDiagToggled = false;
+            const btn = document.getElementById('btn-diag-toggle');
+            if (btn) btn.style.display = 'none';
+        }
     }
 
     showLossPlot(lossHistory, accuracyHistory = null) {
@@ -704,23 +727,50 @@ class VisualizationPanel {
         // Compute symmetric colorscale range
         const flat = Array.isArray(matrix) ? matrix.flat() : (matrix.data || []);
         const absMax = Math.max(...flat.map(v => Math.abs(v || 0)), 0.001);
+
+        // Store original data for diagonal toggle
+        this._hessianData = { matrix, labelNames, tickIndices, showTicks, showText, absMax, isDiag };
+        this._hessianDiagToggled = false;
+
+        this._renderHessian();
+    }
+
+    _renderHessian() {
+        const div = this._getDiv('hessian');
+        const d = this._hessianData;
+        if (!d) return;
+
+        let matrix = d.matrix;
+        if (this._hessianDiagToggled && !d.isDiag) {
+            matrix = d.matrix.map((row, i) =>
+                row.map((v, j) => i === j ? v : 0)
+            );
+        }
+
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
             font: { color: '#cdd6f4', size: 9 },
             margin: { l: 120, r: 20, t: 30, b: 60 },
-            xaxis: { tickvals: showTicks, ticktext: showText, tickangle: 45, tickfont: { size: 8 } },
-            yaxis: { tickvals: showTicks, ticktext: showText, autorange: 'reversed', tickfont: { size: 8 } },
-            title: isDiag ? 'Diagonal Hessian' : 'Hessian Matrix',
+            xaxis: { tickvals: d.showTicks, ticktext: d.showText, tickangle: 45, tickfont: { size: 8 } },
+            yaxis: { tickvals: d.showTicks, ticktext: d.showText, autorange: 'reversed', tickfont: { size: 8 } },
+            title: this._hessianDiagToggled ? 'Diagonal Hessian' : (d.isDiag ? 'Diagonal Hessian' : 'Hessian Matrix'),
             titlefont: { size: 12, color: '#cdd6f4' },
         };
         Plotly.react(div, [{
             z: matrix,
             type: 'heatmap',
             colorscale: 'RdBu',
-            zmin: -absMax,
-            zmax: absMax,
+            zmin: -d.absMax,
+            zmax: d.absMax,
         }], layout, { responsive: true });
+
+        // Update button state
+        const btn = document.getElementById('btn-diag-toggle');
+        if (btn) {
+            btn.style.display = d.isDiag ? 'none' : 'block';
+            btn.textContent = this._hessianDiagToggled ? 'Show All' : 'Diagonal Only';
+        }
     }
 
     showLandscape(gridX, gridY, lossGrid, trajectory, mode) {
@@ -900,6 +950,12 @@ class App {
         document.querySelectorAll('.vis-tab').forEach(t => {
             t.onclick = () => this.vis.switchTab(t.dataset.tab);
         });
+
+        // Diagonal toggle for Hessian heatmap
+        document.getElementById('btn-diag-toggle').onclick = () => {
+            this.vis._hessianDiagToggled = !this.vis._hessianDiagToggled;
+            this.vis._renderHessian();
+        };
 
         // Dataset toggle
         document.getElementById('dataset-select').onchange = (e) => {
