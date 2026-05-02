@@ -85,6 +85,7 @@ ROUTER = {
     "compute_weight_histogram": "_handle_compute_weight_histogram",
     "compute_gradient_stats": "_handle_compute_gradient_stats",
     "compute_activation_stats": "_handle_compute_activation_stats",
+    "compute_layer_stats": "_handle_compute_layer_stats",
 }
 
 
@@ -145,6 +146,7 @@ def _get_response_type(request_type):
         "compute_weight_histogram": "weight_histogram",
         "compute_gradient_stats": "gradient_stats",
         "compute_activation_stats": "activation_stats",
+        "compute_layer_stats": "layer_stats",
     }
     return mapping.get(request_type, "response")
 
@@ -770,6 +772,60 @@ class _Dispatcher:
         if remote.connected:
             await loop.run_in_executor(None, remote.disconnect)
         return {"status": "disconnected"}
+
+    @staticmethod
+    def _safe_round(val, ndigits=6):
+        import math
+        if math.isfinite(val):
+            return round(val, ndigits)
+        return None
+
+    @staticmethod
+    async def _handle_compute_layer_stats(session, payload, ws):
+        if session.model is None:
+            raise ValueError("Create a model first")
+        import torch
+
+        layers = []
+        # Hessian diagonal if cached
+        hessian_diag = None
+        if session._cached_hessian is not None:
+            hc = session._cached_hessian
+            if hc["type"] == "diagonal":
+                hessian_diag = hc["data"]
+            elif hc["type"] == "full" and hc["data"].ndim == 2:
+                hessian_diag = hc["data"].diagonal()
+
+        diag_idx = 0
+        for name, p in session.model.named_parameters():
+            info = {
+                "name": name,
+                "shape": list(p.shape),
+                "numel": p.numel(),
+                "weight_norm": _Dispatcher._safe_round(p.data.norm(2).item()),
+                "weight_mean": _Dispatcher._safe_round(p.data.mean().item()),
+                "weight_std": _Dispatcher._safe_round(p.data.std(unbiased=(p.numel() > 1)).item()),
+            }
+            if p.grad is not None:
+                info["grad_norm"] = _Dispatcher._safe_round(p.grad.data.norm(2).item())
+                info["grad_mean"] = _Dispatcher._safe_round(p.grad.data.mean().item())
+            else:
+                info["grad_norm"] = None
+                info["grad_mean"] = None
+
+            if hessian_diag is not None and diag_idx < hessian_diag.numel():
+                block = hessian_diag.flatten()[diag_idx:diag_idx + p.numel()]
+                info["hessian_diag_mean"] = _Dispatcher._safe_round(block.mean().item())
+                info["hessian_diag_max"] = _Dispatcher._safe_round(block.max().item())
+                diag_idx += p.numel()
+
+            layers.append(info)
+
+        return {
+            "layers": layers,
+            "total_params": session.param_count,
+            "has_hessian_diag": hessian_diag is not None,
+        }
 
     @staticmethod
     async def _handle_compute_activation_stats(session, payload, ws):

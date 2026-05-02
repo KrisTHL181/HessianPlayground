@@ -45,6 +45,7 @@ const I18N = {
         'btn.weight_histogram': 'Weight Hist',
         'btn.gradient_stats': 'Grad Stats',
         'btn.activation_stats': 'Act Stats',
+        'btn.layer_stats': 'Layers',
         'btn.play': 'Play',
         'btn.pause': 'Pause',
 
@@ -95,6 +96,7 @@ const I18N = {
         'tab.weights': 'Weights',
         'tab.gradient': 'Gradient',
         'tab.activations': 'Activations',
+        'tab.layers': 'Layers',
 
         // Placeholders
         'placeholder.hidden_sizes': 'e.g. 128,64',
@@ -190,6 +192,8 @@ const I18N = {
         'plot.act_mean': 'Mean',
         'plot.act_std': 'Std Dev',
         'plot.act_value': 'Value',
+        'plot.layer_weight_norm': 'Weight L2 Norm',
+        'plot.param_count': 'Param Count',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -243,6 +247,7 @@ const I18N = {
         'log.gradient_stats_done': 'Gradient stats: {layers} layers, cos_sim={cosine_sim}, SNR={snr}',
         'log.computing_activation_stats': 'Computing activation statistics...',
         'log.activation_stats_done': 'Activation stats computed: {layers} layers',
+        'log.layer_stats_done': 'Layer stats: {layers} layers, {total} total params',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'header.theme_switch_light': 'Switch to light mode',
         'header.theme_switch_dark': 'Switch to dark mode',
@@ -287,6 +292,7 @@ const I18N = {
         'btn.weight_histogram': '权重直方图',
         'btn.gradient_stats': '梯度统计',
         'btn.activation_stats': '激活统计',
+        'btn.layer_stats': '分层信息',
         'btn.play': '播放',
         'btn.pause': '暂停',
 
@@ -334,6 +340,7 @@ const I18N = {
         'tab.weights': '权重分布',
         'tab.gradient': '梯度',
         'tab.activations': '激活值',
+        'tab.layers': '分层信息',
 
         'placeholder.hidden_sizes': '例如 128,64',
 
@@ -424,6 +431,8 @@ const I18N = {
         'plot.act_mean': '均值',
         'plot.act_std': '标准差',
         'plot.act_value': '值',
+        'plot.layer_weight_norm': '权重 L2 范数',
+        'plot.param_count': '参数数量',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -477,6 +486,7 @@ const I18N = {
         'log.gradient_stats_done': '梯度统计: {layers} 层, 余弦相似度={cosine_sim}, SNR={snr}',
         'log.computing_activation_stats': '正在计算激活统计...',
         'log.activation_stats_done': '激活统计已计算: {layers} 层',
+        'log.layer_stats_done': '分层信息: {layers} 层, {total} 总参数',
         'toast.gradient_ascent': '梯度上升模式',
         'header.theme_switch_light': '切换到浅色模式',
         'header.theme_switch_dark': '切换到深色模式',
