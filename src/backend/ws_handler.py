@@ -82,6 +82,7 @@ ROUTER = {
     "connect_remote": "_handle_connect_remote",
     "disconnect_remote": "_handle_disconnect_remote",
     "get_remote_status": "_handle_get_remote_status",
+    "compute_weight_histogram": "_handle_compute_weight_histogram",
 }
 
 
@@ -139,6 +140,7 @@ def _get_response_type(request_type):
         "connect_remote": "response",
         "disconnect_remote": "response",
         "get_remote_status": "response",
+        "compute_weight_histogram": "weight_histogram",
     }
     return mapping.get(request_type, "response")
 
@@ -771,6 +773,70 @@ class _Dispatcher:
         return {
             "connected": remote.connected,
             "remote_device": remote.remote_device,
+        }
+
+    @staticmethod
+    async def _handle_compute_weight_histogram(session, payload, ws):
+        if not session.param_snapshots:
+            raise ValueError("No training snapshots available. Run training first.")
+
+        import torch
+
+        num_bins = min(payload.get("num_bins", 50), 100)
+        max_layers = min(payload.get("max_layers", 8), 20)
+
+        # Collect weight layers (exclude biases and batch-norm running stats)
+        sample_sd = session.param_snapshots[0]
+        weight_layers = []
+        for key, val in sample_sd.items():
+            if "weight" in key and val.ndim >= 2:
+                weight_layers.append(key)
+
+        if not weight_layers:
+            # Fallback: include all non-bias layers
+            weight_layers = [k for k, v in sample_sd.items() if "bias" not in k and "running" not in k and "tracked" not in k][:max_layers]
+
+        weight_layers = weight_layers[:max_layers]
+
+        snapshots_data = []
+        for snap_idx, sd in enumerate(session.param_snapshots):
+            layer_hists = {}
+            for layer_name in weight_layers:
+                w = sd.get(layer_name)
+                if w is None:
+                    continue
+                vals = w.float().flatten().tolist()
+                mn = min(vals)
+                mx = max(vals)
+                rng = mx - mn
+                if rng == 0:
+                    rng = 1.0
+                # Compute histogram
+                bins = []
+                counts = [0] * num_bins
+                bin_width = rng / num_bins
+                for i in range(num_bins):
+                    bins.append(round(mn + i * bin_width, 6))
+                for v in vals:
+                    idx = min(int((v - mn) / bin_width), num_bins - 1)
+                    counts[idx] += 1
+                layer_hists[layer_name] = {
+                    "bins": bins,
+                    "counts": counts,
+                    "mean": round(sum(vals) / len(vals), 6),
+                    "std": round((sum((x - sum(vals)/len(vals))**2 for x in vals) / len(vals))**0.5, 6),
+                    "min": round(mn, 6),
+                    "max": round(mx, 6),
+                }
+            snapshots_data.append({
+                "index": snap_idx,
+                "histograms": layer_hists,
+            })
+
+        return {
+            "layers": weight_layers,
+            "num_snapshots": len(session.param_snapshots),
+            "snapshots": snapshots_data,
         }
 
 

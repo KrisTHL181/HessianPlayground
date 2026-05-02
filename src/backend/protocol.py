@@ -24,6 +24,7 @@ VALID_REQUEST_TYPES = {
     "connect_remote",
     "disconnect_remote",
     "get_remote_status",
+    "compute_weight_histogram",
 }
 
 RESPONSE_TYPES = {
@@ -42,6 +43,7 @@ RESPONSE_TYPES = {
     "model_adapted",
     "error",
     "status",
+    "weight_histogram",
 }
 
 # Types that are push messages (not direct responses to requests)

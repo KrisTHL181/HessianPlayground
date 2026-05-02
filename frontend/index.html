@@ -180,6 +180,7 @@
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-ghost" id="btn-newton" disabled data-i18n="btn.newton_step">Newton Step</button>
+                    <button class="btn btn-ghost" id="btn-weight-hist" disabled data-i18n="btn.weight_histogram">Weight Hist</button>
                     <button class="btn btn-ghost" id="btn-reset" data-i18n="btn.reset">Reset</button>
                 </div>
             </div>
@@ -196,6 +197,7 @@
                     <div class="vis-tab" data-tab="eigenvalues" data-i18n="tab.eigenvalues">Eigenvalues</div>
                     <div class="vis-tab" data-tab="equation" data-i18n="tab.equation">Equation</div>
                     <div class="vis-tab" data-tab="ntk" data-i18n="tab.ntk">NTK</div>
+                    <div class="vis-tab" data-tab="weights" data-i18n="tab.weights">Weights</div>
                 </div>
                 <div class="vis-content">
                     <div id="plot-loss"></div>
@@ -209,6 +211,7 @@
                     <div id="plot-eigenvalues" style="display:none"></div>
                     <div id="plot-equation" style="display:none"></div>
                     <div id="plot-ntk" style="display:none"></div>
+                    <div id="plot-weights" style="display:none"></div>
                     <button class="btn btn-ghost hessian-diag-btn" id="btn-diag-toggle" style="display:none"
                         data-i18n-title="btn.diagonal_only" title="Highlight only diagonal elements" data-i18n="btn.diagonal_only">Diagonal Only</button>
                     <button class="btn btn-ghost hessian-diag-btn" id="btn-labels-toggle" style="display:none"

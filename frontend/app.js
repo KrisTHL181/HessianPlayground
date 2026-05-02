@@ -326,7 +326,7 @@ class CodeEditor {
 // ============================================================
 class VisualizationPanel {
     constructor() {
-        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk'];
+        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk', 'weights'];
         this.currentTab = 'loss';
         this._plotIds = {
             loss: 'plot-loss',
@@ -335,6 +335,7 @@ class VisualizationPanel {
             eigenvalues: 'plot-eigenvalues',
             equation: 'plot-equation',
             ntk: 'plot-ntk',
+            weights: 'plot-weights',
         };
     }
 
@@ -955,6 +956,100 @@ class VisualizationPanel {
 
         Plotly.react(div, [trace], layout, { responsive: true });
     }
+
+    showWeightHistogram(data) {
+        const div = this._getDiv('weights');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+
+        const layers = data.layers || [];
+        const snapshots = data.snapshots || [];
+        if (!snapshots.length) {
+            Plotly.purge(div);
+            div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">${t('plot.no_data')}</div>`;
+            if (prevDisplay === 'none') div.style.display = 'none';
+            return;
+        }
+
+        // Build animation frames - one frame per snapshot for the first layer
+        // Show layer selector for multi-layer models
+        const firstLayer = layers[0];
+        const frames = [];
+        const sliderSteps = [];
+
+        for (let i = 0; i < snapshots.length; i++) {
+            const h = snapshots[i].histograms[firstLayer];
+            if (!h) continue;
+            frames.push({
+                name: `frame${i}`,
+                data: [{
+                    x: h.bins,
+                    y: h.counts,
+                    type: 'bar',
+                    marker: { color: C.plotLoss },
+                    name: `${t('plot.snapshot')} ${i}`,
+                }],
+            });
+            sliderSteps.push({
+                method: 'animate',
+                label: `${i}`,
+                args: [[`frame${i}`], { mode: 'immediate', transition: { duration: 300 } }],
+            });
+        }
+
+        const initialH = snapshots[0]?.histograms[firstLayer];
+        const traces = [{
+            x: initialH?.bins || [],
+            y: initialH?.counts || [],
+            type: 'bar',
+            marker: { color: C.plotLoss },
+            name: `${t('plot.snapshot')} 0`,
+        }];
+
+        const layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 40, r: 40, t: 40, b: 50 },
+            title: `${t('tab.weights')} — ${firstLayer}`,
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: t('plot.weight_value'), color: C.textDim, gridcolor: C.plotGrid },
+            yaxis: { title: t('plot.count'), color: C.textDim, gridcolor: C.plotGrid },
+            updatemenus: [{
+                type: 'buttons',
+                showactive: false,
+                x: 0.5, y: 1.05,
+                xanchor: 'center',
+                buttons: [{
+                    label: t('btn.play'),
+                    method: 'animate',
+                    args: [null, { mode: 'immediate', fromcurrent: true, transition: { duration: 300 } }],
+                }, {
+                    label: t('btn.pause'),
+                    method: 'animate',
+                    args: [[null], { mode: 'immediate', transition: { duration: 0 } }],
+                }],
+            }],
+            sliders: [{
+                active: 0,
+                steps: sliderSteps,
+                x: 0.1, xanchor: 'left',
+                y: -0.15, yanchor: 'top',
+                len: 0.8,
+                currentvalue: { prefix: `${t('plot.snapshot')} `, font: { color: C.plotFont, size: 11 } },
+                transition: { duration: 300 },
+            }],
+        };
+
+        Plotly.react(div, traces, layout, { responsive: true }).then(() => {
+            if (frames.length > 0) {
+                Plotly.addFrames(div, frames);
+            }
+        });
+
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
 }
 
 // ============================================================
@@ -1302,6 +1397,7 @@ class App {
             hasOptimizer: false,
             training: false,
             paramCount: 0,
+            snapshots: 0,
             lossHistory: [],
             accHistory: [],
             datasetReady: false,
@@ -1411,6 +1507,7 @@ class App {
         document.getElementById('btn-pca-landscape').onclick = () => this._computeLandscape('pca');
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
+        document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-reset').onclick = () => this._reset();
 
         // Tab switching
@@ -1593,6 +1690,7 @@ class App {
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
+        document.getElementById('btn-weight-hist').disabled = !enabled || this.state.snapshots < 2;
         document.getElementById('btn-train').disabled = !this.state.hasModel || this.state.training;
         document.getElementById('btn-stop').disabled = !this.state.training;
     }
@@ -1751,6 +1849,7 @@ class App {
         this.state.training = false;
         this.state.lossHistory = p.loss_history || [];
         this.state.accHistory = p.accuracy_history || [];
+        this.state.snapshots = p.param_snapshots_saved || 0;
         this._setButtons(true);
         this.vis.showLossPlot(this.state.lossHistory, this.state.accHistory);
         this.log.info(tf('log.training_complete', { final_loss: p.final_loss?.toFixed(4), elapsed_seconds: p.elapsed_seconds?.toFixed(1) }));
@@ -1891,6 +1990,26 @@ class App {
         }
     }
 
+    async _computeWeightHistogram() {
+        if (!this.state.hasModel) {
+            this.log.error(t('log.create_model_first'));
+            return;
+        }
+        if (this.state.snapshots === 0) {
+            this.log.error(t('log.no_snapshots'));
+            return;
+        }
+        try {
+            this.log.info(t('log.computing_weight_histogram'));
+            const result = await this.ws.send('compute_weight_histogram', { num_bins: 50 });
+            this.vis.switchTab('weights');
+            this.vis.showWeightHistogram(result);
+            this.log.info(tf('log.weight_histogram_done', { layers: result.layers?.length || 0, snapshots: result.num_snapshots || 0 }));
+        } catch (e) {
+            this.log.error(tf('log.error', { message: e.message }));
+        }
+    }
+
     async _reset() {
         try {
             await this.ws.send('reset_model');
@@ -1901,6 +2020,7 @@ class App {
             hasOptimizer: false,
             training: false,
             paramCount: 0,
+            snapshots: 0,
             lossHistory: [],
             accHistory: [],
             datasetReady: false,

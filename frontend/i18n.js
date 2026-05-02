@@ -42,6 +42,9 @@ const I18N = {
         'btn.full_hessian': 'Full Hessian',
         'btn.connect': 'Connect',
         'btn.disconnect': 'Disconnect',
+        'btn.weight_histogram': 'Weight Hist',
+        'btn.play': 'Play',
+        'btn.pause': 'Pause',
 
         // Labels
         'label.dataset': 'Dataset',
@@ -87,6 +90,7 @@ const I18N = {
         'tab.eigenvalues': 'Eigenvalues',
         'tab.equation': 'Equation',
         'tab.ntk': 'NTK',
+        'tab.weights': 'Weights',
 
         // Placeholders
         'placeholder.hidden_sizes': 'e.g. 128,64',
@@ -173,6 +177,8 @@ const I18N = {
         'plot.ntk_output': 'Output NTK (K×K)',
         'plot.ntk_eigenvalues': 'NTK Eigenvalues',
         "plot.center_point": 'Current Point',
+        'plot.weight_value': 'Weight Value',
+        'plot.snapshot': 'Snapshot',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -219,6 +225,9 @@ const I18N = {
         'log.model_adaptation_failed': 'Model adaptation failed: {message}',
         'log.reset_complete': 'Reset complete',
         'log.ssh_parsed': 'Parsed SSH: {host_info}',
+        'log.no_snapshots': 'No snapshots available. Run training first.',
+        'log.computing_weight_histogram': 'Computing weight histograms...',
+        'log.weight_histogram_done': 'Weight histograms computed: {layers} layers, {snapshots} snapshots',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'header.theme_switch_light': 'Switch to light mode',
         'header.theme_switch_dark': 'Switch to dark mode',
@@ -260,6 +269,9 @@ const I18N = {
         'btn.full_hessian': '完整 Hessian',
         'btn.connect': '连接',
         'btn.disconnect': '断开',
+        'btn.weight_histogram': '权重直方图',
+        'btn.play': '播放',
+        'btn.pause': '暂停',
 
         'label.dataset': '数据集',
         'label.custom_dataset_code': '自定义数据集代码',
@@ -302,6 +314,7 @@ const I18N = {
         'tab.eigenvalues': '特征值',
         'tab.equation': '方程',
         'tab.ntk': 'NTK',
+        'tab.weights': '权重分布',
 
         'placeholder.hidden_sizes': '例如 128,64',
 
@@ -383,6 +396,8 @@ const I18N = {
         'plot.ntk_output': '输出 NTK (K×K)',
         'plot.ntk_eigenvalues': 'NTK 特征值',
         "plot.center_point": '当前参数点',
+        'plot.weight_value': '权重值',
+        'plot.snapshot': '快照',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -429,6 +444,9 @@ const I18N = {
         'log.model_adaptation_failed': '模型调整失败: {message}',
         'log.reset_complete': '重置完成',
         'log.ssh_parsed': 'SSH 解析: {host_info}',
+        'log.no_snapshots': '无可用快照，请先运行训练。',
+        'log.computing_weight_histogram': '正在计算权重直方图...',
+        'log.weight_histogram_done': '权重直方图已计算: {layers} 层, {snapshots} 个快照',
         'toast.gradient_ascent': '梯度上升模式',
         'header.theme_switch_light': '切换到浅色模式',
         'header.theme_switch_dark': '切换到深色模式',
