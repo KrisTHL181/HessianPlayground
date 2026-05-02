@@ -159,6 +159,7 @@ const I18N = {
         'plot.count': 'Count',
         'plot.before': 'Before',
         'plot.after': 'After',
+        "plot.center_point": 'Current Point',
     },
 
     zh: {
@@ -306,6 +307,7 @@ const I18N = {
         'plot.count': 'Count',
         'plot.before': 'Before',
         'plot.after': 'After',
+        "plot.center_point": '当前参数点',
     }
 };
 

@@ -642,7 +642,7 @@ class VisualizationPanel {
         }, { responsive: true });
     }
 
-    showLandscape(gridX, gridY, lossGrid, trajectory, mode) {
+    showLandscape(gridX, gridY, lossGrid, trajectory, mode, center = null) {
         const div = this._getDiv('landscape');
         const C = getThemeColors();
         const traces = [{
@@ -663,6 +663,16 @@ class VisualizationPanel {
                 line: { color: C.plotTrajectory, width: 3 },
                 marker: { size: 4, color: C.plotTrajectory },
                 name: 'Trajectory',
+            });
+        }
+        if (center && center.x !== undefined) {
+            traces.push({
+                x: [center.x],
+                y: [center.y],
+                mode: 'markers',
+                type: 'scatter',
+                marker: { size: 12, color: C.plotTrajectory, symbol: 'star' },
+                name: t('plot.center_point'),
             });
         }
         const layout = {
@@ -1574,8 +1584,13 @@ class App {
                 x: result.trajectory_x,
                 y: result.trajectory_y,
             } : null;
+            const center = (result.center_x !== undefined) ? {
+                x: result.center_x,
+                y: result.center_y,
+                loss: result.center_loss,
+            } : null;
             this.vis.switchTab('landscape');
-            this.vis.showLandscape(result.grid_x, result.grid_y, result.loss_grid, traj, result.mode);
+            this.vis.showLandscape(result.grid_x, result.grid_y, result.loss_grid, traj, result.mode, center);
             this.log.info(`Landscape computed (${result.mode})`);
         } catch (e) {
             this.log.error(`Landscape error: ${e.message}`);

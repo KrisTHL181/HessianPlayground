@@ -142,6 +142,12 @@ async def compute_pca_landscape(session, resolution, range_factor, ws):
         session, model, mean_vec, d1, d2, resolution, grid_range, ws
     )
 
+    # Project current parameters onto PCA directions
+    current_params = session.get_flattened_params()
+    current_centered = current_params - mean_vec.to(current_params.device)
+    proj_x = float(current_centered @ d1.to(current_params.device))
+    proj_y = float(current_centered @ d2.to(current_params.device))
+
     return {
         "mode": "pca",
         "grid_x": grid_x,
@@ -150,6 +156,8 @@ async def compute_pca_landscape(session, resolution, range_factor, ws):
         "trajectory_x": traj_x,
         "trajectory_y": traj_y,
         "center_loss": loss_grid[len(loss_grid) // 2][len(loss_grid) // 2] if loss_grid else None,
+        "center_x": proj_x,
+        "center_y": proj_y,
         "explained_variance_ratio": explained_var,
         "grid_resolution": resolution,
     }
@@ -172,12 +180,16 @@ async def compute_random_landscape(session, resolution, range_factor, seed, ws):
         resolution, grid_range, ws
     )
 
+    mid = resolution // 2
     return {
         "mode": "random",
         "grid_x": grid_x,
         "grid_y": grid_y,
         "loss_grid": loss_grid,
         "grid_resolution": resolution,
+        "center_loss": loss_grid[mid][mid] if loss_grid else None,
+        "center_x": 0.0,
+        "center_y": 0.0,
     }
 
 

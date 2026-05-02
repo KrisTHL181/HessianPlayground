@@ -150,13 +150,29 @@ def _compute_landscape(req):
         model, center, d1, d2, x, y, loss_fn, resolution, grid_range
     )
 
-    return {
+    mid = resolution // 2
+    result = {
         "mode": mode,
         "grid_x": grid_x,
         "grid_y": grid_y,
         "loss_grid": loss_grid,
         "grid_resolution": resolution,
+        "center_loss": loss_grid[mid][mid] if loss_grid else None,
     }
+
+    if mode == "pca":
+        proj_x = float((flat_params - mean_vec) @ d1)
+        proj_y = float((flat_params - mean_vec) @ d2)
+        result["trajectory_x"] = _traj_x
+        result["trajectory_y"] = _traj_y
+        result["explained_variance_ratio"] = _explained_var
+    else:
+        proj_x = 0.0
+        proj_y = 0.0
+
+    result["center_x"] = proj_x
+    result["center_y"] = proj_y
+    return result
 
 
 def _solve_newton(req):
