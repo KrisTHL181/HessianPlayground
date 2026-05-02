@@ -88,6 +88,7 @@ ROUTER = {
     "compute_layer_stats": "_handle_compute_layer_stats",
     "compute_fisher": "_handle_compute_fisher",
     "compute_fisher_eigenvalues": "_handle_compute_fisher_eigenvalues",
+    "compute_interpolation": "_handle_compute_interpolation",
 }
 
 
@@ -151,6 +152,7 @@ def _get_response_type(request_type):
         "compute_layer_stats": "layer_stats",
         "compute_fisher": "fisher_computed",
         "compute_fisher_eigenvalues": "fisher_eigenvalues",
+        "compute_interpolation": "interpolation_computed",
     }
     return mapping.get(request_type, "response")
 
@@ -784,6 +786,18 @@ class _Dispatcher:
         if math.isfinite(val):
             return round(val, ndigits)
         return None
+
+    @staticmethod
+    async def _handle_compute_interpolation(session, payload, ws):
+        if session.model is None:
+            raise ValueError("Create a model first")
+        _ensure_loss_fn(session)
+
+        from backend.landscape import compute_interpolation
+        num_steps = min(payload.get("num_steps", 20), 100)
+        snapshot_a = payload.get("snapshot_a", -1)
+        snapshot_b = payload.get("snapshot_b", 0)
+        return await compute_interpolation(session, num_steps, snapshot_a, snapshot_b, ws)
 
     @staticmethod
     async def _handle_compute_fisher(session, payload, ws):

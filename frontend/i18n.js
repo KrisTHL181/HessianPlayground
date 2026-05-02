@@ -33,6 +33,7 @@ const I18N = {
         'btn.fisher': 'Fisher',
         'btn.pca_landscape': 'PCA Landscape',
         'btn.random_landscape': 'Random Landscape',
+        'btn.interpolation': 'Interpolation',
         'btn.newton_step': 'Newton Step',
         'btn.reset': 'Reset',
         'btn.diagonal_only': 'Diagonal Only',
@@ -197,6 +198,8 @@ const I18N = {
         'plot.layer_weight_norm': 'Weight L2 Norm',
         'plot.param_count': 'Param Count',
         'plot.param_index': 'Parameter Index',
+        'plot.interpolation_curve': 'Loss curve',
+        'plot.interpolation_title': 'Linear Mode Connectivity',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -253,6 +256,8 @@ const I18N = {
         'log.layer_stats_done': 'Layer stats: {layers} layers, {total} total params',
         'log.computing_fisher': 'Computing Fisher Information Matrix...',
         'log.fisher_computed': 'Fisher computed: method={method}, mem≈{memory_mb}MB',
+        'log.computing_interpolation': 'Computing loss interpolation...',
+        'log.interpolation_done': 'Interpolation complete: barrier={barrier}',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'header.theme_switch_light': 'Switch to light mode',
         'header.theme_switch_dark': 'Switch to dark mode',
@@ -285,6 +290,7 @@ const I18N = {
         'btn.fisher': 'Fisher',
         'btn.pca_landscape': 'PCA 景观',
         'btn.random_landscape': '随机景观',
+        'btn.interpolation': '插值',
         'btn.newton_step': '牛顿步',
         'btn.reset': '重置',
         'btn.diagonal_only': '仅对角',
@@ -441,6 +447,8 @@ const I18N = {
         'plot.layer_weight_norm': '权重 L2 范数',
         'plot.param_count': '参数数量',
         'plot.param_index': '参数索引',
+        'plot.interpolation_curve': '损失曲线',
+        'plot.interpolation_title': '线性模式连通性',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -497,6 +505,8 @@ const I18N = {
         'log.layer_stats_done': '分层信息: {layers} 层, {total} 总参数',
         'log.computing_fisher': '正在计算 Fisher 信息矩阵...',
         'log.fisher_computed': 'Fisher 计算完成: 方法={method}, 内存≈{memory_mb}MB',
+        'log.computing_interpolation': '正在计算损失插值...',
+        'log.interpolation_done': '插值完成: 障碍={barrier}',
         'toast.gradient_ascent': '梯度上升模式',
         'header.theme_switch_light': '切换到浅色模式',
         'header.theme_switch_dark': '切换到深色模式',

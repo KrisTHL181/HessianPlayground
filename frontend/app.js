@@ -1159,6 +1159,36 @@ class VisualizationPanel {
         if (prevDisplay === 'none') div.style.display = 'none';
     }
 
+    showInterpolation(data) {
+        const div = this._getDiv('landscape');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+
+        const traces = [{
+            x: data.alphas,
+            y: data.losses,
+            mode: 'lines+markers',
+            type: 'scatter',
+            name: t('plot.interpolation_curve'),
+            line: { color: C.plotLoss, width: 2 },
+        }];
+
+        const layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 40, r: 40, t: 30, b: 40 },
+            title: `${t('plot.interpolation_title')} (${data.label_a} → ${data.label_b}, barrier=${data.barrier?.toFixed(4)})`,
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: 'α', color: C.textDim, gridcolor: C.plotGrid },
+            yaxis: { title: t('plot.loss'), color: C.textDim, gridcolor: C.plotGrid },
+        };
+
+        Plotly.react(div, traces, layout, { responsive: true });
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
+
     showFisherHeatmap(data) {
         const div = this._getDiv('fisher');
         const prevDisplay = div.style.display;
@@ -1706,6 +1736,7 @@ class App {
         document.getElementById('btn-fisher').onclick = () => this._computeFisher();
         document.getElementById('btn-pca-landscape').onclick = () => this._computeLandscape('pca');
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
+        document.getElementById('btn-interpolation').onclick = () => this._computeInterpolation();
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
@@ -1889,7 +1920,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-newton'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2247,6 +2278,22 @@ class App {
             this.vis.switchTab('activations');
             this.vis.showActivationStats(result);
             this.log.info(tf('log.activation_stats_done', { layers: result.layer_names?.length || 0 }));
+        } catch (e) {
+            this.log.error(tf('log.error', { message: e.message }));
+        }
+    }
+
+    async _computeInterpolation() {
+        if (!this.state.hasModel) {
+            this.log.error(t('log.create_model_first'));
+            return;
+        }
+        try {
+            this.log.info(t('log.computing_interpolation'));
+            const result = await this.ws.send('compute_interpolation', { num_steps: 30, snapshot_a: -1, snapshot_b: 0 });
+            this.vis.switchTab('landscape');
+            this.vis.showInterpolation(result);
+            this.log.info(tf('log.interpolation_done', { barrier: result.barrier?.toFixed(4) }));
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }

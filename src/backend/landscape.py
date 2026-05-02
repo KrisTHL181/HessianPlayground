@@ -231,3 +231,83 @@ async def _sample_loss_grid(session, model, center, dir1, dir2, resolution, grid
         p.data.copy_(orig)
 
     return grid_x, grid_y, loss_grid
+
+
+# ---------------------------------------------------------------------------
+# Loss interpolation / linear mode connectivity
+# ---------------------------------------------------------------------------
+
+
+async def compute_interpolation(session, num_steps=20, snapshot_a=-1, snapshot_b=0, ws=None):
+    """Compute loss along linear interpolation between two parameter points."""
+    model = session.model
+    if model is None:
+        raise ValueError("Create a model first")
+
+    loss_fn = session.loss_fn
+    if loss_fn is None:
+        from backend.utils import make_loss_fn
+        loss_fn = make_loss_fn(session.task_type)
+    if session.train_loader is None:
+        raise ValueError("Set a dataset first")
+
+    x_batch, y_batch = next(iter(session.train_loader))
+    device = next(model.parameters()).device
+    x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+
+    if snapshot_a == -1:
+        theta_a = session.get_flattened_params()
+        label_a = "current"
+    else:
+        theta_a = session.get_snapshot_flat(snapshot_a)
+        if theta_a is None:
+            raise ValueError(f"Snapshot {snapshot_a} not found")
+        label_a = f"snapshot_{snapshot_a}"
+
+    if snapshot_b == -1:
+        theta_b = session.get_flattened_params()
+        label_b = "current"
+    else:
+        theta_b = session.get_snapshot_flat(snapshot_b)
+        if theta_b is None:
+            raise ValueError(f"Snapshot {snapshot_b} not found")
+        label_b = f"snapshot_{snapshot_b}"
+
+    theta_a = theta_a.to(device)
+    theta_b = theta_b.to(device)
+    orig_params = [p.data.clone() for p in model.parameters()]
+
+    alphas = torch.linspace(0, 1, num_steps)
+    losses = []
+    max_loss = 0.0
+
+    with torch.no_grad():
+        for alpha in alphas:
+            flat = (1 - alpha) * theta_a + alpha * theta_b
+            set_flat_params(model, flat)
+            model.eval()
+            output = model(x_batch)
+            loss_val = float(loss_fn(output, y_batch).cpu().item())
+            losses.append(loss_val)
+            max_loss = max(max_loss, loss_val)
+
+    for p, orig in zip(model.parameters(), orig_params):
+        p.data.copy_(orig)
+
+    import numpy as np
+    barrier = 0.0
+    if len(losses) >= 3:
+        alpha_vals = np.array([float(a) for a in alphas])
+        linear_interp = (1 - alpha_vals) * losses[0] + alpha_vals * losses[-1]
+        barrier = max(0.0, float(max(np.array(losses) - linear_interp)))
+
+    return {
+        "alphas": [float(a) for a in alphas],
+        "losses": losses,
+        "label_a": label_a,
+        "label_b": label_b,
+        "loss_a": losses[0],
+        "loss_b": losses[-1],
+        "barrier": round(barrier, 6),
+        "num_steps": num_steps,
+    }

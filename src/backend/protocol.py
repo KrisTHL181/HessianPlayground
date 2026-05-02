@@ -30,6 +30,7 @@ VALID_REQUEST_TYPES = {
     "compute_layer_stats",
     "compute_fisher",
     "compute_fisher_eigenvalues",
+    "compute_interpolation",
 }
 
 RESPONSE_TYPES = {
@@ -54,6 +55,7 @@ RESPONSE_TYPES = {
     "layer_stats",
     "fisher_computed",
     "fisher_eigenvalues",
+    "interpolation_computed",
 }
 
 # Types that are push messages (not direct responses to requests)
