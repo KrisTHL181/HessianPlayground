@@ -86,6 +86,8 @@ ROUTER = {
     "compute_gradient_stats": "_handle_compute_gradient_stats",
     "compute_activation_stats": "_handle_compute_activation_stats",
     "compute_layer_stats": "_handle_compute_layer_stats",
+    "compute_fisher": "_handle_compute_fisher",
+    "compute_fisher_eigenvalues": "_handle_compute_fisher_eigenvalues",
 }
 
 
@@ -147,6 +149,8 @@ def _get_response_type(request_type):
         "compute_gradient_stats": "gradient_stats",
         "compute_activation_stats": "activation_stats",
         "compute_layer_stats": "layer_stats",
+        "compute_fisher": "fisher_computed",
+        "compute_fisher_eigenvalues": "fisher_eigenvalues",
     }
     return mapping.get(request_type, "response")
 
@@ -774,11 +778,64 @@ class _Dispatcher:
         return {"status": "disconnected"}
 
     @staticmethod
+    @staticmethod
     def _safe_round(val, ndigits=6):
         import math
         if math.isfinite(val):
             return round(val, ndigits)
         return None
+
+    @staticmethod
+    async def _handle_compute_fisher(session, payload, ws):
+        if session.model is None:
+            raise ValueError("Create a model first")
+        _ensure_loss_fn(session)
+
+        from backend.fisher import compute_fisher, fisher_to_display_matrix
+
+        mode = payload.get("mode", "auto")
+        max_samples = min(payload.get("max_samples", 16), 64)
+        force = payload.get("force_compute", False)
+
+        if session._cached_fisher is not None and not force:
+            if session._cached_fisher.get("mode") != mode:
+                session._cached_fisher = None
+
+        if session._cached_fisher is not None and not force:
+            cached = session._cached_fisher
+        else:
+            loop = asyncio.get_event_loop()
+            cached = await loop.run_in_executor(
+                None, lambda: compute_fisher(session, max_samples=max_samples, mode=mode))
+            session._cached_fisher = cached
+
+        display = fisher_to_display_matrix(cached, session.model)
+
+        return {
+            "num_parameters": cached["param_count"],
+            "is_diagonal": cached["type"] == "diagonal",
+            "method": cached["type"],
+            "fisher_matrix": display.get("fisher_matrix"),
+            "fisher_shape": display.get("fisher_shape", []),
+            "display_type": display.get("display_type", "full"),
+            "dim_labels": display.get("dim_labels", []),
+            "memory_mb": cached["memory_mb"],
+            "num_samples": cached["num_samples"],
+        }
+
+    @staticmethod
+    async def _handle_compute_fisher_eigenvalues(session, payload, ws):
+        if session._cached_fisher is None:
+            raise ValueError("Compute Fisher matrix first")
+
+        if session._cached_fisher_eigenvalues is not None:
+            return session._cached_fisher_eigenvalues
+
+        from backend.fisher import compute_fisher_eigenvalues
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, compute_fisher_eigenvalues, session._cached_fisher)
+        session._cached_fisher_eigenvalues = result
+        return result
 
     @staticmethod
     async def _handle_compute_layer_stats(session, payload, ws):

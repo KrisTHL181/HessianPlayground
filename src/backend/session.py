@@ -29,6 +29,8 @@ class Session:
         self._cached_eigenvalues: dict | None = None
         self._cached_ntk: dict | None = None
         self._cached_ntk_eigenvalues: dict | None = None
+        self._cached_fisher: dict | None = None
+        self._cached_fisher_eigenvalues: dict | None = None
 
         self.sandbox_globals = {}
         self.sandbox_locals = {}
@@ -59,6 +61,8 @@ class Session:
         self._cached_eigenvalues = None
         self._cached_ntk = None
         self._cached_ntk_eigenvalues = None
+        self._cached_fisher = None
+        self._cached_fisher_eigenvalues = None
 
     @property
     def param_count(self):

@@ -326,7 +326,7 @@ class CodeEditor {
 // ============================================================
 class VisualizationPanel {
     constructor() {
-        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk', 'weights', 'gradient', 'activations', 'layers'];
+        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk', 'weights', 'gradient', 'activations', 'layers', 'fisher'];
         this.currentTab = 'loss';
         this._plotIds = {
             loss: 'plot-loss',
@@ -339,6 +339,7 @@ class VisualizationPanel {
             gradient: 'plot-gradient',
             activations: 'plot-activations',
             layers: 'plot-layers',
+            fisher: 'plot-fisher',
         };
     }
 
@@ -1158,6 +1159,51 @@ class VisualizationPanel {
         if (prevDisplay === 'none') div.style.display = 'none';
     }
 
+    showFisherHeatmap(data) {
+        const div = this._getDiv('fisher');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+
+        const matrix = data.fisher_matrix;
+        if (!matrix || !matrix.length) {
+            Plotly.purge(div);
+            div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">${t('plot.no_data')}</div>`;
+            if (prevDisplay === 'none') div.style.display = 'none';
+            return;
+        }
+
+        const isDiag = data.is_diagonal;
+        const zValues = isDiag ? matrix[0] || [] : matrix;
+        const is1D = isDiag;
+        const dim = is1D ? zValues.length : matrix.length;
+        const maxVal = is1D ? Math.max(...zValues.map(Math.abs)) : Math.max(...matrix.flat().map(Math.abs));
+        const zmin = -maxVal;
+        const zmax = maxVal;
+
+        let traces;
+        if (is1D) {
+            traces = [{ z: [zValues, zValues], type: 'heatmap', colorscale: 'RdBu', zmin, zmax }];
+        } else {
+            traces = [{ z: zValues, type: 'heatmap', colorscale: 'RdBu', zmin, zmax }];
+        }
+
+        const method = data.display_type === 'diagonal_trace' ? 'Diagonal' : data.display_type;
+        const layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 50, r: 30, t: 30, b: 50 },
+            title: `Fisher Matrix (${method}, ${data.num_parameters} params, ${data.num_samples} samples)`,
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: t('plot.param_index'), color: C.textDim },
+            yaxis: { title: t('plot.param_index'), color: C.textDim },
+        };
+
+        Plotly.react(div, traces, layout, { responsive: true });
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
+
     showLayerStats(data) {
         const div = this._getDiv('layers');
         const prevDisplay = div.style.display;
@@ -1657,6 +1703,7 @@ class App {
         document.getElementById('btn-stop').onclick = () => this._stopTraining();
         document.getElementById('btn-hessian').onclick = () => this._computeHessian();
         document.getElementById('btn-ntk').onclick = () => this._computeNTK();
+        document.getElementById('btn-fisher').onclick = () => this._computeFisher();
         document.getElementById('btn-pca-landscape').onclick = () => this._computeLandscape('pca');
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
@@ -1842,7 +1889,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-pca-landscape', 'btn-random-landscape', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-newton'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2200,6 +2247,22 @@ class App {
             this.vis.switchTab('activations');
             this.vis.showActivationStats(result);
             this.log.info(tf('log.activation_stats_done', { layers: result.layer_names?.length || 0 }));
+        } catch (e) {
+            this.log.error(tf('log.error', { message: e.message }));
+        }
+    }
+
+    async _computeFisher() {
+        if (!this.state.hasModel) {
+            this.log.error(t('log.create_model_first'));
+            return;
+        }
+        try {
+            this.log.info(t('log.computing_fisher'));
+            const result = await this.ws.send('compute_fisher', { mode: 'auto', max_samples: 16 }, 600000);
+            this.vis.switchTab('fisher');
+            this.vis.showFisherHeatmap(result);
+            this.log.info(tf('log.fisher_computed', { method: result.method, memory_mb: result.memory_mb?.toFixed(1) }));
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }

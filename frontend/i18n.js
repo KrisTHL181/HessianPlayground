@@ -30,6 +30,7 @@ const I18N = {
         'btn.stop': 'Stop',
         'btn.hessian': 'Hessian',
         'btn.ntk': 'NTK',
+        'btn.fisher': 'Fisher',
         'btn.pca_landscape': 'PCA Landscape',
         'btn.random_landscape': 'Random Landscape',
         'btn.newton_step': 'Newton Step',
@@ -97,6 +98,7 @@ const I18N = {
         'tab.gradient': 'Gradient',
         'tab.activations': 'Activations',
         'tab.layers': 'Layers',
+        'tab.fisher': 'Fisher',
 
         // Placeholders
         'placeholder.hidden_sizes': 'e.g. 128,64',
@@ -194,6 +196,7 @@ const I18N = {
         'plot.act_value': 'Value',
         'plot.layer_weight_norm': 'Weight L2 Norm',
         'plot.param_count': 'Param Count',
+        'plot.param_index': 'Parameter Index',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -248,6 +251,8 @@ const I18N = {
         'log.computing_activation_stats': 'Computing activation statistics...',
         'log.activation_stats_done': 'Activation stats computed: {layers} layers',
         'log.layer_stats_done': 'Layer stats: {layers} layers, {total} total params',
+        'log.computing_fisher': 'Computing Fisher Information Matrix...',
+        'log.fisher_computed': 'Fisher computed: method={method}, mem≈{memory_mb}MB',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'header.theme_switch_light': 'Switch to light mode',
         'header.theme_switch_dark': 'Switch to dark mode',
@@ -277,6 +282,7 @@ const I18N = {
         'btn.stop': '停止',
         'btn.hessian': 'Hessian',
         'btn.ntk': 'NTK',
+        'btn.fisher': 'Fisher',
         'btn.pca_landscape': 'PCA 景观',
         'btn.random_landscape': '随机景观',
         'btn.newton_step': '牛顿步',
@@ -341,6 +347,7 @@ const I18N = {
         'tab.gradient': '梯度',
         'tab.activations': '激活值',
         'tab.layers': '分层信息',
+        'tab.fisher': 'Fisher 矩阵',
 
         'placeholder.hidden_sizes': '例如 128,64',
 
@@ -433,6 +440,7 @@ const I18N = {
         'plot.act_value': '值',
         'plot.layer_weight_norm': '权重 L2 范数',
         'plot.param_count': '参数数量',
+        'plot.param_index': '参数索引',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -487,6 +495,8 @@ const I18N = {
         'log.computing_activation_stats': '正在计算激活统计...',
         'log.activation_stats_done': '激活统计已计算: {layers} 层',
         'log.layer_stats_done': '分层信息: {layers} 层, {total} 总参数',
+        'log.computing_fisher': '正在计算 Fisher 信息矩阵...',
+        'log.fisher_computed': 'Fisher 计算完成: 方法={method}, 内存≈{memory_mb}MB',
         'toast.gradient_ascent': '梯度上升模式',
         'header.theme_switch_light': '切换到浅色模式',
         'header.theme_switch_dark': '切换到深色模式',
