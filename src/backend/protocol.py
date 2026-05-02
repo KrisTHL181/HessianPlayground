@@ -26,6 +26,7 @@ VALID_REQUEST_TYPES = {
     "get_remote_status",
     "compute_weight_histogram",
     "compute_gradient_stats",
+    "compute_activation_stats",
 }
 
 RESPONSE_TYPES = {
@@ -46,6 +47,7 @@ RESPONSE_TYPES = {
     "status",
     "weight_histogram",
     "gradient_stats",
+    "activation_stats",
 }
 
 # Types that are push messages (not direct responses to requests)

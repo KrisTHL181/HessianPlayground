@@ -84,6 +84,7 @@ ROUTER = {
     "get_remote_status": "_handle_get_remote_status",
     "compute_weight_histogram": "_handle_compute_weight_histogram",
     "compute_gradient_stats": "_handle_compute_gradient_stats",
+    "compute_activation_stats": "_handle_compute_activation_stats",
 }
 
 
@@ -143,6 +144,7 @@ def _get_response_type(request_type):
         "get_remote_status": "response",
         "compute_weight_histogram": "weight_histogram",
         "compute_gradient_stats": "gradient_stats",
+        "compute_activation_stats": "activation_stats",
     }
     return mapping.get(request_type, "response")
 
@@ -768,6 +770,17 @@ class _Dispatcher:
         if remote.connected:
             await loop.run_in_executor(None, remote.disconnect)
         return {"status": "disconnected"}
+
+    @staticmethod
+    async def _handle_compute_activation_stats(session, payload, ws):
+        from backend.activation_stats import compute_activation_stats
+        if session.model is None:
+            raise ValueError("Create a model first")
+        if session.train_loader is None:
+            raise ValueError("Set a dataset first")
+        num_batches = min(payload.get("num_batches", 2), 16)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, compute_activation_stats, session, num_batches)
 
     @staticmethod
     async def _handle_compute_gradient_stats(session, payload, ws):

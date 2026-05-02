@@ -326,7 +326,7 @@ class CodeEditor {
 // ============================================================
 class VisualizationPanel {
     constructor() {
-        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk', 'weights', 'gradient'];
+        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk', 'weights', 'gradient', 'activations'];
         this.currentTab = 'loss';
         this._plotIds = {
             loss: 'plot-loss',
@@ -337,6 +337,7 @@ class VisualizationPanel {
             ntk: 'plot-ntk',
             weights: 'plot-weights',
             gradient: 'plot-gradient',
+            activations: 'plot-activations',
         };
     }
 
@@ -1103,6 +1104,58 @@ class VisualizationPanel {
         Plotly.react(div, traces, layout, { responsive: true });
         if (prevDisplay === 'none') div.style.display = 'none';
     }
+
+    showActivationStats(data) {
+        const div = this._getDiv('activations');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+
+        const layers = data.layer_names || [];
+        const stats = data.layer_stats || {};
+        if (!layers.length) {
+            Plotly.purge(div);
+            div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">${t('plot.no_data')}</div>`;
+            if (prevDisplay === 'none') div.style.display = 'none';
+            return;
+        }
+
+        const shortNames = layers.map(n => n.length > 20 ? n.substring(0, 20) + '...' : n);
+        const meanVals = layers.map(n => (stats[n] || {}).mean || 0);
+        const stdVals = layers.map(n => (stats[n] || {}).std || 0);
+
+        const traces = [
+            {
+                x: shortNames,
+                y: meanVals,
+                type: 'bar',
+                name: t('plot.act_mean'),
+                marker: { color: C.plotLoss },
+            },
+            {
+                x: shortNames,
+                y: stdVals,
+                type: 'bar',
+                name: t('plot.act_std'),
+                marker: { color: C.plotAcc },
+            },
+        ];
+
+        const layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 40, r: 40, t: 30, b: 80 },
+            title: t('tab.activations'),
+            titlefont: { size: 12, color: C.plotFont },
+            barmode: 'group',
+            xaxis: { title: t('plot.layer'), color: C.textDim, tickangle: -45, automargin: true },
+            yaxis: { title: t('plot.act_value'), color: C.textDim, gridcolor: C.plotGrid },
+        };
+
+        Plotly.react(div, traces, layout, { responsive: true });
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
 }
 
 // ============================================================
@@ -1562,6 +1615,7 @@ class App {
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
+        document.getElementById('btn-activations').onclick = () => this._computeActivationStats();
         document.getElementById('btn-reset').onclick = () => this._reset();
 
         // Tab switching
@@ -1746,6 +1800,7 @@ class App {
         });
         document.getElementById('btn-weight-hist').disabled = !enabled || this.state.snapshots < 2;
         document.getElementById('btn-gradient').disabled = !enabled;
+        document.getElementById('btn-activations').disabled = !enabled;
         document.getElementById('btn-train').disabled = !this.state.hasModel || this.state.training;
         document.getElementById('btn-stop').disabled = !this.state.training;
     }
@@ -2080,6 +2135,22 @@ class App {
                 cosine_sim: result.mean_cosine_similarity?.toFixed(4) || 'N/A',
                 snr: (result.gradient_snr || 0).toFixed(4),
             }));
+        } catch (e) {
+            this.log.error(tf('log.error', { message: e.message }));
+        }
+    }
+
+    async _computeActivationStats() {
+        if (!this.state.hasModel) {
+            this.log.error(t('log.create_model_first'));
+            return;
+        }
+        try {
+            this.log.info(t('log.computing_activation_stats'));
+            const result = await this.ws.send('compute_activation_stats', { num_batches: 2 });
+            this.vis.switchTab('activations');
+            this.vis.showActivationStats(result);
+            this.log.info(tf('log.activation_stats_done', { layers: result.layer_names?.length || 0 }));
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }
