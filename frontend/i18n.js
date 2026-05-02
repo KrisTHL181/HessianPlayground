@@ -37,6 +37,7 @@ const I18N = {
         'btn.lr_test': 'LR Test',
         'btn.noise_scale': 'Noise Scale',
         'btn.sharpness': 'Sharpness',
+        'btn.spectral_density': 'Spectral',
         'btn.newton_step': 'Newton Step',
         'btn.reset': 'Reset',
         'btn.share': 'Share URL',
@@ -211,6 +212,9 @@ const I18N = {
         'plot.noise_scale': 'Noise Scale',
         'plot.noise_scale_title': 'Gradient Noise Scale (McCandlish et al. 2018)',
         'plot.batch_size_axis': 'Batch Size',
+        'plot.spectral_density': 'Spectral Density',
+        'plot.spectral_title': 'Spectral Density (KPM)',
+        'plot.density': 'Density',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -275,6 +279,8 @@ const I18N = {
         'log.noise_scale_done': 'Gradient noise scale computed',
         'log.computing_sharpness': 'Computing sharpness landscape...',
         'log.sharpness_done': 'Sharpness landscape: λ1={ev1}, λ2={ev2}',
+        'log.computing_spectral': 'Computing spectral density (KPM)...',
+        'log.spectral_done': 'Spectral density computed: {moments} moments',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'log.url_copied': 'URL copied to clipboard',
         'log.url_loaded': 'Configuration loaded from URL',
@@ -314,6 +320,7 @@ const I18N = {
         'btn.lr_test': 'LR 测试',
         'btn.noise_scale': '噪声规模',
         'btn.sharpness': '锐度景观',
+        'btn.spectral_density': '谱密度',
         'btn.newton_step': '牛顿步',
         'btn.reset': '重置',
         'btn.share': '分享链接',
@@ -480,6 +487,9 @@ const I18N = {
         'plot.noise_scale': '噪声规模',
         'plot.noise_scale_title': '梯度噪声规模 (McCandlish et al. 2018)',
         'plot.batch_size_axis': '批次大小',
+        'plot.spectral_density': '谱密度',
+        'plot.spectral_title': '谱密度 (KPM)',
+        'plot.density': '密度',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -544,6 +554,8 @@ const I18N = {
         'log.noise_scale_done': '梯度噪声规模已计算',
         'log.computing_sharpness': '正在计算锐度景观...',
         'log.sharpness_done': '锐度景观: λ1={ev1}, λ2={ev2}',
+        'log.computing_spectral': '正在计算谱密度 (KPM)...',
+        'log.spectral_done': '谱密度已计算: {moments} 矩',
         'toast.gradient_ascent': '梯度上升模式',
         'log.url_copied': '链接已复制到剪贴板',
         'log.url_loaded': '已从链接加载配置',

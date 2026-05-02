@@ -34,6 +34,7 @@ VALID_REQUEST_TYPES = {
     "start_lr_test",
     "compute_gradient_noise_scale",
     "compute_sharpness_landscape",
+    "compute_spectral_density",
 }
 
 RESPONSE_TYPES = {
@@ -62,6 +63,7 @@ RESPONSE_TYPES = {
     "lr_test_progress",
     "lr_test_complete",
     "gradient_noise_scale",
+    "spectral_density",
 }
 
 # Types that are push messages (not direct responses to requests)

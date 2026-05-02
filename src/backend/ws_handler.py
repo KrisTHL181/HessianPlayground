@@ -92,6 +92,7 @@ ROUTER = {
     "start_lr_test": "_handle_start_lr_test",
     "compute_gradient_noise_scale": "_handle_compute_gradient_noise_scale",
     "compute_sharpness_landscape": "_handle_compute_sharpness_landscape",
+    "compute_spectral_density": "_handle_compute_spectral_density",
 }
 
 
@@ -159,6 +160,7 @@ def _get_response_type(request_type):
         "start_lr_test": "response",
         "compute_gradient_noise_scale": "gradient_noise_scale",
         "compute_sharpness_landscape": "landscape_computed",
+        "compute_spectral_density": "spectral_density",
     }
     return mapping.get(request_type, "response")
 
@@ -346,6 +348,18 @@ class _Dispatcher:
             "batch_size": batch_size,
             "task": task,
         }
+
+    @staticmethod
+    async def _handle_compute_spectral_density(session, payload, ws):
+        if session.model is None:
+            raise ValueError("Create a model first")
+        _ensure_loss_fn(session)
+
+        from backend.hessian import compute_spectral_density_kpm
+        num_moments = min(payload.get("num_moments", 50), 100)
+        num_vectors = min(payload.get("num_vectors", 1), 3)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, compute_spectral_density_kpm, session, num_moments, num_vectors)
 
     @staticmethod
     async def _handle_compute_sharpness_landscape(session, payload, ws):

@@ -840,6 +840,31 @@ class VisualizationPanel {
         Plotly.react(div, traces, layout, { responsive: true });
     }
 
+    showSpectralDensity(data) {
+        const div = this._getDiv('eigenvalues');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+        const traces = [{
+            x: data.eigenvalues_grid, y: data.density,
+            type: 'scatter', mode: 'lines',
+            name: t('plot.spectral_density'),
+            line: { color: C.plotLoss, width: 2 },
+            fill: 'tozeroy', fillcolor: C.plotLoss.replace(')', ',0.2)').replace('rgb', 'rgba'),
+        }];
+        const layout = {
+            paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 40, r: 40, t: 30, b: 40 },
+            title: `${t('plot.spectral_title')} (KPM, m=${data.num_moments})`,
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: t('plot.eigenvalue'), color: C.textDim, gridcolor: C.plotGrid },
+            yaxis: { title: t('plot.density'), color: C.textDim, gridcolor: C.plotGrid },
+        };
+        Plotly.react(div, traces, layout, { responsive: true });
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
+
     showEigenvalues(evals, histBins, histCounts, stats) {
         const div = this._getDiv('eigenvalues');
         // Ensure container is visible so Plotly gets correct dimensions
@@ -1787,6 +1812,7 @@ class App {
         document.getElementById('btn-lr-test').onclick = () => this._startLRTest();
         document.getElementById('btn-noise-scale').onclick = () => this._computeNoiseScale();
         document.getElementById('btn-sharpness').onclick = () => this._computeSharpness();
+        document.getElementById('btn-spectral').onclick = () => this._computeSpectralDensity();
         document.getElementById('btn-share').onclick = () => this._shareURL();
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
@@ -1971,7 +1997,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-sharpness', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-sharpness', 'btn-spectral', 'btn-newton'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2366,6 +2392,17 @@ class App {
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }
+    }
+
+    async _computeSpectralDensity() {
+        if (!this.state.hasModel) { this.log.error(t('log.create_model_first')); return; }
+        try {
+            this.log.info(t('log.computing_spectral'));
+            const result = await this.ws.send('compute_spectral_density', { num_moments: 50 }, 120000);
+            this.vis.switchTab('eigenvalues');
+            this.vis.showSpectralDensity(result);
+            this.log.info(tf('log.spectral_done', { moments: result.num_moments }));
+        } catch (e) { this.log.error(tf('log.error', { message: e.message })); }
     }
 
     async _computeSharpness() {

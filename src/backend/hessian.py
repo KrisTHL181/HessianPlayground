@@ -831,3 +831,113 @@ def _block_diag_display(cached, model):
         "dim_labels": labels,
         "block_matrices": block_displays,
     }
+
+
+def compute_spectral_density_kpm(session, num_moments=50, num_vectors=1):
+    """Compute spectral density of the Hessian using the Kernel Polynomial Method.
+
+    Uses stochastic trace estimation with Rademacher vectors and the
+    Hessian-vector product via Pearlmutter's trick.
+    """
+    model = session.model
+    if model is None or session.train_loader is None or session.loss_fn is None:
+        raise ValueError("Model, dataset, and loss function required")
+
+    device = next(model.parameters()).device
+    n = session.param_count
+    x_batch, y_batch = next(iter(session.train_loader))
+    x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+
+    # Estimate spectral bounds via power iteration (multiple iterations for convergence)
+    v = torch.randn(n, device=device)
+    v = v / v.norm()
+    for _ in range(20):
+        hv = _hvp(v, model, x_batch, y_batch, session.loss_fn)
+        v = hv / hv.norm()
+    lambda_max = abs(torch.dot(v, _hvp(v, model, x_batch, y_batch, session.loss_fn)).item())
+    lambda_max = max(lambda_max * 1.5, 1.0)  # generous safety margin
+
+    a = -lambda_max
+    b = lambda_max
+    scale = 2.0 / (b - a)
+    shift = (b + a) / (b - a)
+
+    # Accumulate moments via stochastic trace estimation
+    moments = torch.zeros(num_moments, device=device)
+
+    for _ in range(num_vectors):
+        r = torch.randint(0, 2, (n,), device=device).float() * 2 - 1  # Rademacher
+        r = r / r.norm() * (n ** 0.5)
+
+        v_prev = r
+        v_curr = _hvp(r, model, x_batch, y_batch, session.loss_fn)
+        v_curr = scale * v_curr - shift * r  # scale H and shift to [-1, 1]
+
+        moments[0] += torch.dot(r, r) / n
+        moments[1] += torch.dot(r, v_curr) / n
+
+        for m in range(2, num_moments):
+            v_next = _hvp(v_curr, model, x_batch, y_batch, session.loss_fn)
+            v_next = 2.0 * (scale * v_next - shift * v_curr) - v_prev
+            moments[m] += torch.dot(r, v_next) / n  # r^T T_m(H̃) r
+            v_prev = v_curr
+            v_curr = v_next
+
+    moments = moments / num_vectors
+
+    # Jackson kernel damping
+    jackson = torch.zeros(num_moments)
+    alpha = torch.tensor(torch.pi / (num_moments + 1), device=device)
+    for k in range(num_moments):
+        jk = ((num_moments - k + 1) * torch.cos(alpha * k) +
+              torch.sin(alpha * k) / torch.tan(alpha))
+        jackson[k] = jk / (num_moments + 1)
+
+    moments = moments * jackson.to(device)
+
+    # Evaluate density on a grid
+    num_points = 200
+    xs = torch.linspace(-1, 1, num_points, device=device)
+    density = torch.zeros(num_points, device=device)
+
+    # Chebyshev polynomials T_k(x)
+    for k in range(num_moments):
+        if k == 0:
+            T_k = torch.ones_like(xs)
+        elif k == 1:
+            T_k = xs
+            T_prev = torch.ones_like(xs)
+        else:
+            T_new = 2 * xs * T_k - T_prev
+            T_prev = T_k
+            T_k = T_new
+
+        # 1 / (pi * sqrt(1 - x^2))
+        weight = 1.0 / (torch.pi * torch.sqrt(torch.clamp(1.0 - xs * xs, min=1e-10)))
+        density += moments[k] * T_k * weight
+
+    # Rescale back to original domain
+    eigenvalues_grid = [(a + (b - a) * (float(x) + 1) / 2) for x in xs.cpu()]
+
+    # Sanitize non-finite density values — JSON spec forbids NaN/Infinity
+    density = torch.nan_to_num(density, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return {
+        "eigenvalues_grid": eigenvalues_grid,
+        "density": density.cpu().tolist(),
+        "num_moments": num_moments,
+        "lambda_min": a,
+        "lambda_max": b,
+    }
+
+
+def _hvp(v, model, x_batch, y_batch, loss_fn):
+    """Hessian-vector product H·v using Pearlmutter's trick."""
+    model.zero_grad()
+    output = model(x_batch)
+    loss = loss_fn(output, y_batch)
+    grad_params = torch.autograd.grad(loss, model.parameters(), create_graph=True)
+    g = torch.cat([gp.view(-1) for gp in grad_params])
+    dot = torch.dot(g, v)
+    hv = torch.autograd.grad(dot, model.parameters(), retain_graph=False)
+    return torch.cat([hvp.view(-1).float() for hvp in hv]).detach()
