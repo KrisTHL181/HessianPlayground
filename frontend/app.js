@@ -88,7 +88,7 @@ function _updateThemeButton(theme) {
     const btn = document.getElementById('btn-theme');
     if (btn) {
         btn.textContent = theme === 'dark' ? '☀' : '☾';
-        btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        btn.title = theme === 'dark' ? t('header.theme_switch_light') : t('header.theme_switch_dark');
     }
 }
 
@@ -705,7 +705,7 @@ class VisualizationPanel {
             plot_bgcolor: 'transparent',
             font: { color: C.plotFont, size: 11 },
             margin: { l: 40, r: 40, t: 30, b: 40 },
-            title: `${t('tab.eigenvalues')} (min=${stats.min?.toFixed(3)}, max=${stats.max?.toFixed(3)}, cond=${stats.condition})`,
+            title: `${t('tab.eigenvalues')} (${t('curvature_matrices.min')}=${stats.min?.toFixed(3)}, ${t('curvature_matrices.max')}=${stats.max?.toFixed(3)}, ${t('curvature_matrices.condition')}=${stats.condition})`,
             titlefont: { size: 12, color: C.plotFont },
             xaxis: { title: t('plot.eigenvalue'), color: C.textDim },
             yaxis: { title: t('plot.count'), color: C.textDim },
@@ -730,7 +730,7 @@ class VisualizationPanel {
             plot_bgcolor: 'transparent',
             font: { color: C.plotFont, size: 11 },
             margin: { l: 40, r: 40, t: 40, b: 40 },
-            title: `${t('plot.newton_step')} (loss improved by ${data.loss_improvement?.toFixed(4)})`,
+            title: `${t('plot.newton_step')} (${t('plot.newton_step_improvement')} ${data.loss_improvement?.toFixed(4)})`,
             titlefont: { size: 12, color: C.plotFont },
         };
         Plotly.react(div, traces, layout, { responsive: true });
@@ -998,7 +998,7 @@ class SettingsPanel {
         if (user) document.getElementById('cfg-REMOTE_USER').value = user;
         if (port) document.getElementById('cfg-REMOTE_PORT').value = port;
 
-        this.log.info(`Parsed SSH: ${user ? user + '@' : ''}${host}${port ? ' :' + port : ''}`);
+        this.log.info(tf('log.ssh_parsed', { host_info: `${user ? user + '@' : ''}${host}${port ? ' :' + port : ''}` }));
     }
 
     async _save() {
@@ -1113,6 +1113,11 @@ class App {
             }
         });
 
+        // Update theme button title when language changes
+        window.addEventListener('languagechange', () => {
+            _updateThemeButton(getCurrentTheme());
+        });
+
         // Connection status
         this.ws.onStatusChange = (status) => {
             document.getElementById('status-dot').className = 'status-dot ' + status;
@@ -1128,7 +1133,7 @@ class App {
             this._setButtons(false);
             document.getElementById('btn-train').disabled = true;
             document.getElementById('btn-stop').disabled = true;
-            this.log.warn('Connection restored — backend session was reset. Please recreate model and dataset.');
+            this.log.warn(t('log.connection_restored'));
             this._updateSnapshotEstimate();
             for (const tab of this.vis.tabs) {
                 if (tab === 'loss') continue;
@@ -1154,13 +1159,13 @@ class App {
                 this.state.hasModel = false;
                 this.state.paramCount = 0;
                 this._setButtons(false);
-                this.log.warn('Model invalidated — recreate model to match new dataset dimensions');
+                this.log.warn(t('log.model_invalidated'));
             }
             // Clear one-shot adaptation flag after the first dataset_ready that consumed it
             if (this._pendingAdaptation === 'reset_full') {
                 this._pendingAdaptation = null;
             }
-            this.log.info(`Dataset ready: ${p.dataset_name || 'custom'} (input=${p.input_size}, output=${p.num_classes}, ${p.train_samples} train)`);
+            this.log.info(tf('log.dataset_ready', { dataset_name: p.dataset_name || 'custom', input_size: p.input_size, output_size: p.num_classes, train_samples: p.train_samples }));
         });
         this.ws.on('model_created', (p) => {
             this.state.hasModel = true;
@@ -1392,7 +1397,7 @@ class App {
             const outputSize = parseInt(document.getElementById('output-size').value) || 10;
             const hiddenRaw = document.getElementById('hidden-sizes').value || '128,64';
             const hiddenSizes = hiddenRaw.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-            this.log.info(`Creating model: input=${inputSize}, hidden=${hiddenSizes}, output=${outputSize}...`);
+            this.log.info(tf('log.creating_model', { input_size: inputSize, hidden_sizes: hiddenSizes.join(','), output_size: outputSize }));
             const result = await this.ws.send('create_model', {
                 code,
                 input_size: inputSize,
@@ -1401,10 +1406,10 @@ class App {
             });
             this.state.hasModel = true;
             this.state.paramCount = result.num_parameters;
-            this.log.info(`Model created: ${result.model_name} (${result.num_parameters} params)`);
+            this.log.info(tf('log.model_created', { model_name: result.model_name, num_parameters: result.num_parameters }));
             this._setButtons(true);
         } catch (e) {
-            this.log.error(`Failed to create model: ${e.message}`);
+            this.log.error(tf('log.model_create_failed', { message: e.message }));
         }
     }
 
@@ -1424,7 +1429,7 @@ class App {
             }
             this.state.lossHistory = [];
             this.state.accHistory = [];
-            this.log.info(`Starting training for ${epochs} epochs, snapshot every ${snapshotInterval} batches...`);
+            this.log.info(tf('log.starting_training', { epochs, snapshot_interval: snapshotInterval }));
             const result = await this.ws.send('start_training', {
                 epochs,
                 record_params_every: snapshotInterval,
@@ -1435,7 +1440,7 @@ class App {
                 this._setButtons(true);
             }
         } catch (e) {
-            this.log.error(`Training failed: ${e.message}`);
+            this.log.error(tf('log.training_failed', { message: e.message }));
             this.state.training = false;
             this._setButtons(false);
         }
@@ -1444,9 +1449,9 @@ class App {
     async _stopTraining() {
         try {
             await this.ws.send('stop_training');
-            this.log.info('Stopping training...');
+            this.log.info(t('log.stopping_training'));
         } catch (e) {
-            this.log.error(`Stop failed: ${e.message}`);
+            this.log.error(tf('log.stop_failed', { message: e.message }));
         }
     }
 
@@ -1454,7 +1459,7 @@ class App {
         const dsName = document.getElementById('dataset-select').value;
         const batchSize = parseInt(document.getElementById('batch-size').value) || 64;
         try {
-            this.log.info(`Loading dataset: ${dsName}...`);
+            this.log.info(tf('log.loading_dataset', { name: dsName }));
             if (dsName === 'custom') {
                 const code = document.getElementById('custom-dataset-code').value;
                 if (!code.trim()) throw new Error('Enter custom dataset code');
@@ -1467,9 +1472,9 @@ class App {
                 });
             }
             this.state.datasetReady = true;
-            this.log.info(`Dataset ${dsName} loaded`);
+            this.log.info(tf('log.dataset_loaded', { name: dsName }));
         } catch (e) {
-            this.log.error(`Dataset error: ${e.message}`);
+            this.log.error(tf('log.dataset_error', { message: e.message }));
             throw e;
         }
     }
@@ -1481,7 +1486,7 @@ class App {
         if (lr < 0) {
             gradientAscent = true;
             lr = Math.abs(lr);
-            showToast('Gradient ascent mode');
+            showToast(t('toast.gradient_ascent'));
         }
         try {
             if (optName === 'custom') {
@@ -1495,7 +1500,7 @@ class App {
             this.state.hasOptimizer = true;
             this.state.gradientAscent = gradientAscent;
         } catch (e) {
-            this.log.error(`Optimizer error: ${e.message}`);
+            this.log.error(tf('log.optimizer_error', { message: e.message }));
             throw e;
         }
     }
@@ -1512,7 +1517,7 @@ class App {
                 this.state.accHistory.length > 0 ? p.train_accuracy : null);
         }
 
-        this.log.debug(`Epoch ${p.epoch}/${p.total_epochs} Batch ${p.batch} Loss ${p.loss.toFixed(4)}`);
+        this.log.debug(tf('log.training_progress', { epoch: p.epoch, total_epochs: p.total_epochs, batch: p.batch, loss: p.loss.toFixed(4) }));
     }
 
     _onTrainingComplete(p) {
@@ -1521,12 +1526,12 @@ class App {
         this.state.accHistory = p.accuracy_history || [];
         this._setButtons(true);
         this.vis.showLossPlot(this.state.lossHistory, this.state.accHistory);
-        this.log.info(`Training complete: loss=${p.final_loss?.toFixed(4)}, elapsed=${p.elapsed_seconds?.toFixed(1)}s`);
+        this.log.info(tf('log.training_complete', { final_loss: p.final_loss?.toFixed(4), elapsed_seconds: p.elapsed_seconds?.toFixed(1) }));
     }
 
     async _computeHessian(forceDiag = null) {
         if (!this.state.hasModel) {
-            this.log.error('Create a model first');
+            this.log.error(t('log.create_model_first'));
             return;
         }
         const method = forceDiag !== null
@@ -1543,7 +1548,7 @@ class App {
             return;
         }
         try {
-            this.log.info(`Computing Hessian (method=${method}, dtype=${dtype})...`);
+            this.log.info(tf('log.computing_hessian', { method, dtype }));
             const result = await this.ws.send('compute_hessian', {
                 method, use_diagonal_approx: method === 'diagonal',
                 sample_batches: 1, dtype,
@@ -1561,23 +1566,23 @@ class App {
                     num_positive: evResult.num_positive,
                     num_negative: evResult.num_negative,
                 });
-                this.log.info(`Hessian computed: method=${result.method}, display=${result.display_type}, mem≈${result.memory_mb?.toFixed(1)}MB`);
+                this.log.info(tf('log.hessian_computed', { method: result.method, display_type: result.display_type, memory_mb: result.memory_mb?.toFixed(1) }));
             } catch (evErr) {
-                this.log.warn(`Eigenvalue computation failed: ${evErr.message}`);
+                this.log.warn(tf('log.eigenvalue_failed', { message: evErr.message }));
             }
         } catch (e) {
-            this.log.error(`Hessian error: ${e.message}`);
+            this.log.error(tf('log.hessian_error', { message: e.message }));
         }
     }
 
     async _computeLandscape(mode) {
         if (!this.state.hasModel) {
-            this.log.error('Create a model first');
+            this.log.error(t('log.create_model_first'));
             return;
         }
         try {
             const res = parseInt(document.getElementById('batch-size').value) > 16 ? 20 : 30;
-            this.log.info(`Computing ${mode} landscape...`);
+            this.log.info(tf('log.computing_landscape', { mode }));
             const type = mode === 'pca' ? 'compute_pca_landscape' : 'compute_random_landscape';
             const result = await this.ws.send(type, { grid_resolution: res, range_factor: 2.0 });
             const traj = result.mode === 'pca' ? {
@@ -1591,19 +1596,19 @@ class App {
             } : null;
             this.vis.switchTab('landscape');
             this.vis.showLandscape(result.grid_x, result.grid_y, result.loss_grid, traj, result.mode, center);
-            this.log.info(`Landscape computed (${result.mode})`);
+            this.log.info(tf('log.landscape_computed', { mode: result.mode }));
         } catch (e) {
-            this.log.error(`Landscape error: ${e.message}`);
+            this.log.error(tf('log.landscape_error', { message: e.message }));
         }
     }
 
     async _solveNewton() {
         if (!this.state.hasModel) {
-            this.log.error('Create a model first');
+            this.log.error(t('log.create_model_first'));
             return;
         }
         try {
-            this.log.info('Solving Newton step...');
+            this.log.info(t('log.solving_newton'));
             const result = await this.ws.send('solve_newton_step', {
                 regularization: 1e-4,
                 apply_step: true,
@@ -1611,9 +1616,9 @@ class App {
             });
             this.vis.switchTab('equation');
             this.vis.showEquationResult(result);
-            this.log.info(`Newton step: loss ${result.loss_before?.toFixed(4)} → ${result.loss_after?.toFixed(4)} (Δ=${result.loss_improvement?.toFixed(4)})`);
+            this.log.info(tf('log.newton_step_result', { loss_before: result.loss_before?.toFixed(4), loss_after: result.loss_after?.toFixed(4), loss_improvement: result.loss_improvement?.toFixed(4) }));
         } catch (e) {
-            this.log.error(`Newton step error: ${e.message}`);
+            this.log.error(tf('log.newton_error', { message: e.message }));
         }
     }
 
@@ -1638,7 +1643,7 @@ class App {
         document.getElementById('btn-stop').disabled = true;
         this._initEmptyPlots();
         this._updateSnapshotEstimate();
-        this.log.info('Reset complete');
+        this.log.info(t('log.reset_complete'));
     }
 
     async _loadPreset() {
@@ -1646,9 +1651,9 @@ class App {
         try {
             const code = await Presets.loadModel(name);
             this.modelEditor.setCode(code);
-            this.log.info(`Loaded preset: ${name}`);
+            this.log.info(tf('log.preset_loaded', { name }));
         } catch (e) {
-            this.log.error(`Failed to load preset '${name}': ${e.message}`);
+            this.log.error(tf('log.preset_load_failed', { name, message: e.message }));
         }
     }
 
@@ -1665,7 +1670,7 @@ class App {
             this._setButtons(false);
             document.getElementById('btn-train').disabled = true;
             document.getElementById('btn-stop').disabled = true;
-            this.log.warn('Model reset — recreate model to match new dataset dimensions');
+            this.log.warn(t('log.model_reset'));
             return;
         }
 
@@ -1674,7 +1679,7 @@ class App {
         const outputSize = parseInt(document.getElementById('output-size').value) || 10;
 
         try {
-            this.log.info(`Adapting model (${mode})...`);
+            this.log.info(tf('log.adapting_model', { mode }));
             const result = await this.ws.send('adapt_model', {
                 mode,
                 input_size: inputSize,
@@ -1682,9 +1687,9 @@ class App {
             });
             this.state.paramCount = result.num_parameters;
             this._pendingAdaptation = mode;
-            this.log.info(`Model adapted: ${result.old_input_size}→${result.new_input_size} in, ${result.old_output_size}→${result.new_output_size} out (${result.num_parameters} params)`);
+            this.log.info(tf('log.model_adapted', { old_input_size: result.old_input_size, new_input_size: result.new_input_size, old_output_size: result.old_output_size, new_output_size: result.new_output_size, num_parameters: result.num_parameters }));
         } catch (e) {
-            this.log.error(`Model adaptation failed: ${e.message}`);
+            this.log.error(tf('log.model_adaptation_failed', { message: e.message }));
             this._pendingAdaptation = null;
         }
     }

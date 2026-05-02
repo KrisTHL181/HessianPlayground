@@ -150,6 +150,7 @@ const I18N = {
         'plot.loss_landscape_pca': 'Loss Landscape (PCA)',
         'plot.loss_landscape_random': 'Loss Landscape (Random Directions)',
         'plot.newton_step': 'Newton Step',
+        'plot.newton_step_improvement': 'loss improved by',
         'plot.loss': 'Loss',
         'plot.accuracy': 'Accuracy',
         'plot.step': 'Step',
@@ -160,6 +161,51 @@ const I18N = {
         'plot.before': 'Before',
         'plot.after': 'After',
         "plot.center_point": 'Current Point',
+
+        // Curvature matrices
+        'curvature_matrices.min': 'Min Value',
+        'curvature_matrices.max': 'Max Value',
+        'curvature_matrices.condition': 'Condition Number',
+
+        // Log messages
+        'log.connection_restored': 'Connection restored — backend session was reset. Please recreate model and dataset.',
+        'log.model_invalidated': 'Model invalidated — recreate model to match new dataset dimensions',
+        'log.model_reset': 'Model reset — recreate model to match new dataset dimensions',
+        'log.dataset_ready': 'Dataset ready: {dataset_name} (input={input_size}, output={output_size}, {train_samples} train)',
+        'log.creating_model': 'Creating model: input={input_size}, hidden={hidden_sizes}, output={output_size}...',
+        'log.model_created': 'Model created: {model_name} ({num_parameters} params)',
+        'log.model_create_failed': 'Failed to create model: {message}',
+        'log.starting_training': 'Starting training for {epochs} epochs, snapshot every {snapshot_interval} batches...',
+        'log.training_failed': 'Training failed: {message}',
+        'log.stopping_training': 'Stopping training...',
+        'log.stop_failed': 'Stop failed: {message}',
+        'log.loading_dataset': 'Loading dataset: {name}...',
+        'log.dataset_loaded': 'Dataset {name} loaded',
+        'log.dataset_error': 'Dataset error: {message}',
+        'log.optimizer_error': 'Optimizer error: {message}',
+        'log.training_progress': 'Epoch {epoch}/{total_epochs} Batch {batch} Loss {loss}',
+        'log.training_complete': 'Training complete: loss={final_loss}, elapsed={elapsed_seconds}s',
+        'log.create_model_first': 'Create a model first',
+        'log.computing_hessian': 'Computing Hessian (method={method}, dtype={dtype})...',
+        'log.hessian_computed': 'Hessian computed: method={method}, display={display_type}, mem≈{memory_mb}MB',
+        'log.eigenvalue_failed': 'Eigenvalue computation failed: {message}',
+        'log.hessian_error': 'Hessian error: {message}',
+        'log.computing_landscape': 'Computing {mode} landscape...',
+        'log.landscape_computed': 'Landscape computed ({mode})',
+        'log.landscape_error': 'Landscape error: {message}',
+        'log.solving_newton': 'Solving Newton step...',
+        'log.newton_step_result': 'Newton step: loss {loss_before} → {loss_after} (Δ={loss_improvement})',
+        'log.newton_error': 'Newton step error: {message}',
+        'log.preset_loaded': 'Loaded preset: {name}',
+        'log.preset_load_failed': "Failed to load preset '{name}': {message}",
+        'log.adapting_model': 'Adapting model ({mode})...',
+        'log.model_adapted': 'Model adapted: {old_input_size}→{new_input_size} in, {old_output_size}→{new_output_size} out ({num_parameters} params)',
+        'log.model_adaptation_failed': 'Model adaptation failed: {message}',
+        'log.reset_complete': 'Reset complete',
+        'log.ssh_parsed': 'Parsed SSH: {host_info}',
+        'toast.gradient_ascent': 'Gradient ascent mode',
+        'header.theme_switch_light': 'Switch to light mode',
+        'header.theme_switch_dark': 'Switch to dark mode',
     },
 
     zh: {
@@ -298,16 +344,62 @@ const I18N = {
         'plot.loss_landscape_pca': '损失景观 (PCA)',
         'plot.loss_landscape_random': '损失景观 (随机方向)',
         'plot.newton_step': '牛顿步',
-        'plot.loss': 'Loss',
-        'plot.accuracy': 'Accuracy %',
-        'plot.step': 'Step',
-        'plot.direction1': 'Direction 1',
-        'plot.direction2': 'Direction 2',
-        'plot.eigenvalue': 'Eigenvalue',
-        'plot.count': 'Count',
-        'plot.before': 'Before',
-        'plot.after': 'After',
+        'plot.newton_step_improvement': '损失改善了',
+        'plot.loss': '损失',
+        'plot.accuracy': '正确率 %',
+        'plot.step': '训练步',
+        'plot.direction1': '主成分方向 1',
+        'plot.direction2': '主成分方向 2',
+        'plot.eigenvalue': '特征值',
+        'plot.count': '数量',
+        'plot.before': '原先',
+        'plot.after': '当前',
         "plot.center_point": '当前参数点',
+
+        // Curvature matrices
+        'curvature_matrices.min': '最小值',
+        'curvature_matrices.max': '最大值',
+        'curvature_matrices.condition': '条件数',
+
+        // 日志消息
+        'log.connection_restored': '连接已恢复 — 后端会话已重置。请重新创建模型和数据集。',
+        'log.model_invalidated': '模型已失效 — 请重新创建模型以匹配新的数据集维度',
+        'log.model_reset': '模型已重置 — 请重新创建模型以匹配新的数据集维度',
+        'log.dataset_ready': '数据集已就绪: {dataset_name} (输入={input_size}, 输出={output_size}, {train_samples} 训练样本)',
+        'log.creating_model': '正在创建模型: 输入={input_size}, 隐藏层={hidden_sizes}, 输出={output_size}...',
+        'log.model_created': '模型已创建: {model_name} ({num_parameters} 参数)',
+        'log.model_create_failed': '创建模型失败: {message}',
+        'log.starting_training': '开始训练 {epochs} 轮, 每 {snapshot_interval} 批次保存快照...',
+        'log.training_failed': '训练失败: {message}',
+        'log.stopping_training': '正在停止训练...',
+        'log.stop_failed': '停止失败: {message}',
+        'log.loading_dataset': '正在加载数据集: {name}...',
+        'log.dataset_loaded': '数据集 {name} 已加载',
+        'log.dataset_error': '数据集错误: {message}',
+        'log.optimizer_error': '优化器错误: {message}',
+        'log.training_progress': '轮次 {epoch}/{total_epochs} 批次 {batch} 损失 {loss}',
+        'log.training_complete': '训练完成: 损失={final_loss}, 耗时={elapsed_seconds}秒',
+        'log.create_model_first': '请先创建模型',
+        'log.computing_hessian': '正在计算 Hessian (方法={method}, 精度={dtype})...',
+        'log.hessian_computed': 'Hessian 计算完成: 方法={method}, 显示={display_type}, 内存≈{memory_mb}MB',
+        'log.eigenvalue_failed': '特征值计算失败: {message}',
+        'log.hessian_error': 'Hessian 错误: {message}',
+        'log.computing_landscape': '正在计算 {mode} 景观...',
+        'log.landscape_computed': '景观计算完成 ({mode})',
+        'log.landscape_error': '景观错误: {message}',
+        'log.solving_newton': '正在求解牛顿步...',
+        'log.newton_step_result': '牛顿步: 损失 {loss_before} → {loss_after} (Δ={loss_improvement})',
+        'log.newton_error': '牛顿步错误: {message}',
+        'log.preset_loaded': '已加载预设: {name}',
+        'log.preset_load_failed': "加载预设 '{name}' 失败: {message}",
+        'log.adapting_model': '正在调整模型 ({mode})...',
+        'log.model_adapted': '模型已调整: {old_input_size}→{new_input_size} 输入, {old_output_size}→{new_output_size} 输出 ({num_parameters} 参数)',
+        'log.model_adaptation_failed': '模型调整失败: {message}',
+        'log.reset_complete': '重置完成',
+        'log.ssh_parsed': 'SSH 解析: {host_info}',
+        'toast.gradient_ascent': '梯度上升模式',
+        'header.theme_switch_light': '切换到浅色模式',
+        'header.theme_switch_dark': '切换到深色模式',
     }
 };
 
@@ -315,6 +407,14 @@ let _i18nLang = localStorage.getItem('hessian-lang') || 'en';
 
 function t(key) {
     return (I18N[_i18nLang] && I18N[_i18nLang][key]) || I18N.en[key] || key;
+}
+
+function tf(key, replacements = {}) {
+    let text = t(key);
+    for (const [k, v] of Object.entries(replacements)) {
+        text = text.replace('{' + k + '}', v);
+    }
+    return text;
 }
 
 function setLanguage(lang) {
@@ -332,6 +432,7 @@ function setLanguage(lang) {
         const key = el.getAttribute('data-i18n-title');
         if (key) el.title = t(key);
     });
+    window.dispatchEvent(new CustomEvent('languagechange', { detail: { lang } }));
 }
 
 function getLanguage() { return _i18nLang; }
