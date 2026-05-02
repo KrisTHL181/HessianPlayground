@@ -814,7 +814,7 @@ class VisualizationPanel {
                 type: 'scatter',
                 line: { color: C.plotTrajectory, width: 3 },
                 marker: { size: 4, color: C.plotTrajectory },
-                name: 'Trajectory',
+                name: t('plot.trajectory'),
             });
         }
         if (center && center.x !== undefined) {
