@@ -48,6 +48,83 @@ const OPTIMIZER_PARAMS = {
 const METHOD_NAMES = { full: 'Full', diagonal: 'Diagonal', kfac: 'K-FAC', block_diag: 'Block-Diag' };
 
 // ============================================================
+// Theme management
+// ============================================================
+const THEME_STORAGE_KEY = 'hessian-theme';
+
+function getCurrentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+}
+
+function getThemeColors() {
+    const style = getComputedStyle(document.documentElement);
+    const v = (name) => style.getPropertyValue(name).trim();
+    return {
+        plotFont: v('--plot-font') || '#141413',
+        plotGrid: v('--plot-grid') || '#e8e6dc',
+        plotLoss: v('--plot-loss') || '#c96442',
+        plotAccuracy: v('--plot-accuracy') || '#3b8258',
+        plotEigen: v('--plot-eigen') || '#c96442',
+        plotTrajectory: v('--plot-trajectory') || '#8c2981',
+        plotEqBefore: v('--plot-equation-before') || '#b53333',
+        plotEqAfter: v('--plot-equation-after') || '#3b8258',
+        textDim: v('--text-dim') || '#87867f',
+        text: v('--text') || '#141413',
+    };
+}
+
+function setTheme(theme) {
+    if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+    }
+    _updateThemeButton(theme);
+    _updateThemeSettings(theme);
+    window.dispatchEvent(new CustomEvent('themechange', { detail: { theme } }));
+}
+
+function _updateThemeButton(theme) {
+    const btn = document.getElementById('btn-theme');
+    if (btn) {
+        btn.textContent = theme === 'dark' ? '☀' : '☾';
+        btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+}
+
+function _updateThemeSettings(theme) {
+    const sel = document.getElementById('settings-theme');
+    if (sel) {
+        const stored = localStorage.getItem(THEME_STORAGE_KEY);
+        sel.value = stored || 'auto';
+    }
+}
+
+function toggleTheme() {
+    const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem(THEME_STORAGE_KEY, next);
+}
+
+function initTheme() {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') {
+        setTheme(saved);
+    } else {
+        // Auto-detect system preference, default to dark
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setTheme(prefersDark ? 'dark' : 'light');
+    }
+
+    // Listen for system preference changes (only applies when no manual override)
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem(THEME_STORAGE_KEY)) {
+            setTheme(e.matches ? 'dark' : 'light');
+        }
+    });
+}
+
+// ============================================================
 // Toast notification
 // ============================================================
 function showToast(message, duration = 3000) {
@@ -217,9 +294,11 @@ class LogPanel {
 // ============================================================
 class CodeEditor {
     constructor(parentEl, options = {}) {
+        const isDark = getCurrentTheme() === 'dark';
+        this._cmTheme = isDark ? 'monokai' : 'eclipse';
         this.editor = CodeMirror(parentEl, {
             mode: 'python',
-            theme: 'monokai',
+            theme: this._cmTheme,
             lineNumbers: true,
             indentUnit: 4,
             tabSize: 4,
@@ -227,6 +306,11 @@ class CodeEditor {
             value: options.defaultValue || '',
             readOnly: options.readOnly || false,
         });
+        this._onThemeChange = (e) => {
+            this._cmTheme = e.detail.theme === 'dark' ? 'monokai' : 'eclipse';
+            this.editor.setOption('theme', this._cmTheme);
+        };
+        window.addEventListener('themechange', this._onThemeChange);
     }
 
     getCode() { return this.editor.getValue(); }
@@ -306,29 +390,30 @@ class VisualizationPanel {
 
     showLossPlot(lossHistory, accuracyHistory = null) {
         const div = this._getDiv('loss');
+        const C = getThemeColors();
         const traces = [{
             y: lossHistory,
             mode: 'lines',
             name: t('plot.loss'),
-            line: { color: '#89b4fa', width: 2 },
+            line: { color: C.plotLoss, width: 2 },
         }];
         if (accuracyHistory && accuracyHistory.length > 0) {
             traces.push({
                 y: accuracyHistory,
                 mode: 'lines',
                 name: t('plot.accuracy'),
-                line: { color: '#a6e3a1', width: 2 },
+                line: { color: C.plotAccuracy, width: 2 },
                 yaxis: 'y2',
             });
         }
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            font: { color: '#cdd6f4', size: 11 },
+            font: { color: C.plotFont, size: 11 },
             margin: { l: 40, r: 40, t: 10, b: 30 },
-            xaxis: { title: t('plot.step'), color: '#8888aa', gridcolor: '#404070' },
-            yaxis: { title: t('plot.loss'), color: '#8888aa', gridcolor: '#404070' },
-            yaxis2: { title: t('plot.accuracy'), color: '#a6e3a1', overlaying: 'y', side: 'right' },
+            xaxis: { title: t('plot.step'), color: C.textDim, gridcolor: C.plotGrid },
+            yaxis: { title: t('plot.loss'), color: C.textDim, gridcolor: C.plotGrid },
+            yaxis2: { title: t('plot.accuracy'), color: C.plotAccuracy, overlaying: 'y', side: 'right' },
             showlegend: true,
             legend: { font: { size: 10 } },
         };
@@ -397,6 +482,14 @@ class VisualizationPanel {
         this._renderSingleHeatmap();
     }
 
+    _renderHessian() {
+        const d = this._hessianData;
+        if (!d) return;
+        if (d.type === 'kfac') this._renderKfacLayer();
+        else if (d.type === 'block_diag') this._renderBlockDetail();
+        else this._renderSingleHeatmap();
+    }
+
     _renderSingleHeatmap() {
         const div = this._getDiv('hessian');
         const d = this._hessianData;
@@ -409,15 +502,16 @@ class VisualizationPanel {
             );
         }
 
+        const C = getThemeColors();
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            font: { color: '#cdd6f4', size: 9 },
+            font: { color: C.plotFont, size: 9 },
             margin: { l: 120, r: 20, t: 30, b: 60 },
             xaxis: { tickvals: d.tickvals, ticktext: d.ticktext, tickangle: 45, tickfont: { size: 8 } },
             yaxis: { tickvals: d.tickvals, ticktext: d.ticktext, autorange: 'reversed', tickfont: { size: 8 } },
             title: this._hessianDiagToggled ? t('plot.diagonal_hessian') : (d.isDiag ? t('plot.diagonal_hessian') : t('plot.hessian_matrix')),
-            titlefont: { size: 12, color: '#cdd6f4' },
+            titlefont: { size: 12, color: C.plotFont },
         };
         Plotly.react(div, [{
             z: matrix,
@@ -472,6 +566,7 @@ class VisualizationPanel {
             0.001,
         );
 
+        const C = getThemeColors();
         Plotly.react(div, [
             {
                 z: f.A_matrix, type: 'heatmap', colorscale: 'RdBu',
@@ -486,11 +581,11 @@ class VisualizationPanel {
         ], {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            font: { color: '#cdd6f4', size: 10 },
+            font: { color: C.plotFont, size: 10 },
             margin: { l: 60, r: 60, t: 50, b: 50 },
             grid: { rows: 1, columns: 2, pattern: 'independent' },
             title: `K-FAC: ${f.layer_name} (${f.in_features}→${f.out_features})`,
-            titlefont: { size: 13, color: '#cdd6f4' },
+            titlefont: { size: 13, color: C.plotFont },
             xaxis: { title: 'Input dim' },
             yaxis: { title: 'Input dim', autorange: 'reversed' },
             xaxis2: { title: 'Output dim' },
@@ -531,16 +626,17 @@ class VisualizationPanel {
         const flat = b.block_matrix.flat(2);
         const absMax = Math.max(...flat.map(v => Math.abs(v || 0)), 0.001);
 
+        const C = getThemeColors();
         Plotly.react(div, [{
             z: b.block_matrix, type: 'heatmap', colorscale: 'RdBu',
             zmin: -absMax, zmax: absMax,
         }], {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            font: { color: '#cdd6f4', size: 10 },
+            font: { color: C.plotFont, size: 10 },
             margin: { l: 80, r: 20, t: 50, b: 60 },
             title: `Block: ${b.block_name} (${b.block_param_count} params)`,
-            titlefont: { size: 13, color: '#cdd6f4' },
+            titlefont: { size: 13, color: C.plotFont },
             xaxis: { automargin: true },
             yaxis: { autorange: 'reversed', automargin: true },
         }, { responsive: true });
@@ -548,6 +644,7 @@ class VisualizationPanel {
 
     showLandscape(gridX, gridY, lossGrid, trajectory, mode) {
         const div = this._getDiv('landscape');
+        const C = getThemeColors();
         const traces = [{
             z: lossGrid,
             x: gridX,
@@ -563,20 +660,20 @@ class VisualizationPanel {
                 y: trajectory.y,
                 mode: 'lines+markers',
                 type: 'scatter',
-                line: { color: '#f38ba8', width: 3 },
-                marker: { size: 4, color: '#f38ba8' },
+                line: { color: C.plotTrajectory, width: 3 },
+                marker: { size: 4, color: C.plotTrajectory },
                 name: 'Trajectory',
             });
         }
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            font: { color: '#cdd6f4', size: 11 },
+            font: { color: C.plotFont, size: 11 },
             margin: { l: 40, r: 40, t: 30, b: 40 },
             title: mode === 'pca' ? t('plot.loss_landscape_pca') : t('plot.loss_landscape_random'),
-            titlefont: { size: 12, color: '#cdd6f4' },
-            xaxis: { title: t('plot.direction1'), color: '#8888aa' },
-            yaxis: { title: t('plot.direction2'), color: '#8888aa' },
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: t('plot.direction1'), color: C.textDim },
+            yaxis: { title: t('plot.direction2'), color: C.textDim },
         };
         Plotly.react(div, traces, layout, { responsive: true });
     }
@@ -586,21 +683,22 @@ class VisualizationPanel {
         // Ensure container is visible so Plotly gets correct dimensions
         const prevDisplay = div.style.display;
         if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
         const traces = [{
             x: histBins,
             y: histCounts,
             type: 'bar',
-            marker: { color: '#89b4fa' },
+            marker: { color: C.plotEigen },
         }];
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            font: { color: '#cdd6f4', size: 11 },
+            font: { color: C.plotFont, size: 11 },
             margin: { l: 40, r: 40, t: 30, b: 40 },
             title: `${t('tab.eigenvalues')} (min=${stats.min?.toFixed(3)}, max=${stats.max?.toFixed(3)}, cond=${stats.condition})`,
-            titlefont: { size: 12, color: '#cdd6f4' },
-            xaxis: { title: t('plot.eigenvalue'), color: '#8888aa' },
-            yaxis: { title: t('plot.count'), color: '#8888aa' },
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: t('plot.eigenvalue'), color: C.textDim },
+            yaxis: { title: t('plot.count'), color: C.textDim },
         };
         Plotly.react(div, traces, layout, { responsive: true });
         if (prevDisplay === 'none') div.style.display = 'none';
@@ -608,21 +706,22 @@ class VisualizationPanel {
 
     showEquationResult(data) {
         const div = this._getDiv('equation');
+        const C = getThemeColors();
         const traces = [{
             x: [t('plot.before'), t('plot.after')],
             y: [data.loss_before, data.loss_after],
             type: 'bar',
-            marker: { color: ['#f38ba8', '#a6e3a1'] },
+            marker: { color: [C.plotEqBefore, C.plotEqAfter] },
             text: [data.loss_before?.toFixed(4), data.loss_after?.toFixed(4)],
             textposition: 'auto',
         }];
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            font: { color: '#cdd6f4', size: 11 },
+            font: { color: C.plotFont, size: 11 },
             margin: { l: 40, r: 40, t: 40, b: 40 },
             title: `${t('plot.newton_step')} (loss improved by ${data.loss_improvement?.toFixed(4)})`,
-            titlefont: { size: 12, color: '#cdd6f4' },
+            titlefont: { size: 12, color: C.plotFont },
         };
         Plotly.react(div, traces, layout, { responsive: true });
     }
@@ -669,6 +768,19 @@ class SettingsPanel {
             this.ws.updateStatusText();
         };
 
+        // Theme selector
+        document.getElementById('settings-theme').onchange = (e) => {
+            const value = e.target.value;
+            if (value === 'auto') {
+                localStorage.removeItem(THEME_STORAGE_KEY);
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                setTheme(prefersDark ? 'dark' : 'light');
+            } else {
+                localStorage.setItem(THEME_STORAGE_KEY, value);
+                setTheme(value);
+            }
+        };
+
         // Remote connect/disconnect
         document.getElementById('btn-remote-connect').onclick = () => this._remoteConnect();
         document.getElementById('btn-remote-disconnect').onclick = () => this._remoteDisconnect();
@@ -687,6 +799,7 @@ class SettingsPanel {
 
     async _open() {
         document.getElementById('settings-lang').value = getLanguage();
+        document.getElementById('settings-theme').value = localStorage.getItem(THEME_STORAGE_KEY) || 'auto';
         // Reset to first tab
         document.querySelectorAll('.settings-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
         document.querySelectorAll('.settings-page').forEach((p, i) => p.style.display = i === 0 ? 'block' : 'none');
@@ -979,6 +1092,17 @@ class App {
     }
 
     _setupListeners() {
+        // Theme toggle
+        document.getElementById('btn-theme').onclick = () => toggleTheme();
+
+        // Keyboard shortcut for theme toggle
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+                e.preventDefault();
+                toggleTheme();
+            }
+        });
+
         // Connection status
         this.ws.onStatusChange = (status) => {
             document.getElementById('status-dot').className = 'status-dot ' + status;
@@ -1555,6 +1679,7 @@ class App {
 // Boot
 // ============================================================
 (async () => {
+    initTheme();
     setLanguage(getLanguage());
     const app = await App.init();
     app._setButtons(false);

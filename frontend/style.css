@@ -4,19 +4,64 @@
     padding: 0;
 }
 
+/* ── Light Theme (default) ── */
 :root {
+    --bg: #f5f4ed;
+    --surface: #faf9f5;
+    --surface2: #e8e6dc;
+    --border: #e8e6dc;
+    --border-strong: #d5d3c8;
+    --text: #141413;
+    --text-secondary: #5e5d59;
+    --text-dim: #87867f;
+    --accent: #c96442;
+    --accent-hover: #d97757;
+    --green: #3b8258;
+    --orange: #c96442;
+    --red: #b53333;
+    --font: 'Segoe UI', system-ui, sans-serif;
+    --mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+
+    /* Plot colors */
+    --plot-font: #141413;
+    --plot-grid: #e8e6dc;
+    --plot-loss: #c96442;
+    --plot-accuracy: #3b8258;
+    --plot-eigen: #c96442;
+    --plot-trajectory: #8c2981;
+    --plot-equation-before: #b53333;
+    --plot-equation-after: #3b8258;
+}
+
+/* ── Dark Theme ── */
+[data-theme="dark"] {
     --bg: #1e1e2e;
     --surface: #282840;
     --surface2: #303050;
     --border: #404070;
+    --border-strong: #505080;
     --text: #cdd6f4;
+    --text-secondary: #a0a0c0;
     --text-dim: #8888aa;
     --accent: #89b4fa;
+    --accent-hover: #b4c8fa;
     --green: #a6e3a1;
     --orange: #fab387;
     --red: #f38ba8;
-    --font: 'Segoe UI', system-ui, sans-serif;
-    --mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+
+    --plot-font: #cdd6f4;
+    --plot-grid: #404070;
+    --plot-loss: #89b4fa;
+    --plot-accuracy: #a6e3a1;
+    --plot-eigen: #89b4fa;
+    --plot-trajectory: #f38ba8;
+    --plot-equation-before: #f38ba8;
+    --plot-equation-after: #a6e3a1;
+}
+
+/* ── Theme transition ── */
+*, *::before, *::after {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 body {
@@ -211,7 +256,7 @@ body {
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: #b4c8fa;
+    filter: brightness(1.15);
 }
 
 .btn-danger {
@@ -220,7 +265,7 @@ body {
 }
 
 .btn-danger:hover:not(:disabled) {
-    background: #f5a0b8;
+    filter: brightness(1.15);
 }
 
 .btn-ghost {
@@ -239,7 +284,7 @@ body {
 }
 
 .btn-green:hover:not(:disabled) {
-    background: #b8f0b8;
+    filter: brightness(1.15);
 }
 
 .btn-row {
@@ -294,7 +339,7 @@ body {
     z-index: 10;
     padding: 4px 10px;
     font-size: 11px;
-    background: rgba(30, 30, 46, 0.85);
+    background: var(--surface);
     border-radius: 4px;
 }
 
@@ -336,7 +381,7 @@ body {
 }
 
 .log-entry.debug {
-    color: #666;
+    color: var(--text-dim);
     font-style: italic;
 }
 

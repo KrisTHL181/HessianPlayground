@@ -8,6 +8,7 @@ const I18N = {
 
         // Header
         'header.settings': 'Settings',
+        'header.theme': 'Toggle light/dark mode',
         'status.connecting': 'Connecting...',
         'status.connected': 'Connected',
         'status.disconnected': 'Disconnected',
@@ -96,6 +97,11 @@ const I18N = {
         // Settings (already in place)
         'settings.title': 'Settings',
         'settings.language': 'Language',
+        'settings.theme': 'Theme',
+        'settings.theme_mode': 'Theme Mode',
+        'settings.theme_auto': 'Auto (System)',
+        'settings.theme_light': 'Light',
+        'settings.theme_dark': 'Dark',
         'settings.parameters': 'Parameters',
         'settings.ui_language': 'UI Language',
         'settings.param_limits': 'Parameter Limits',
@@ -158,6 +164,7 @@ const I18N = {
         'app.title': 'Hessian Playground',
 
         'header.settings': '设置',
+        'header.theme': '切换浅色/深色模式',
         'status.connecting': '连接中...',
         'status.connected': '已连接',
         'status.disconnected': '已断开',
@@ -237,6 +244,11 @@ const I18N = {
 
         'settings.title': '设置',
         'settings.language': '语言',
+        'settings.theme': '主题',
+        'settings.theme_mode': '主题模式',
+        'settings.theme_auto': '自动 (跟随系统)',
+        'settings.theme_light': '浅色',
+        'settings.theme_dark': '深色',
         'settings.parameters': '参数',
         'settings.ui_language': '界面语言',
         'settings.param_limits': '参数限制',

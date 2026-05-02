@@ -9,6 +9,7 @@
     <!-- CodeMirror -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
 
@@ -28,6 +29,7 @@
         <div style="display:flex;align-items:center;gap:12px">
             <span class="status-dot connecting" id="status-dot"></span>
             <span id="status-text" style="font-size:13px">Connecting...</span>
+            <button class="btn-icon" id="btn-theme" title="Toggle light/dark mode">☾</button>
             <button class="btn-icon" id="btn-settings" data-i18n-title="header.settings" title="Settings">⚙</button>
         </div>
     </div>
@@ -224,6 +226,7 @@
             </div>
             <div class="settings-tabs">
                 <div class="settings-tab active" data-stab="language" data-i18n="settings.language">Language</div>
+                <div class="settings-tab" data-stab="theme" data-i18n="settings.theme">Theme</div>
                 <div class="settings-tab" data-stab="compute" data-i18n="settings.compute">Compute</div>
                 <div class="settings-tab" data-stab="remote" data-i18n="settings.remote">Remote</div>
                 <div class="settings-tab" data-stab="params" data-i18n="settings.parameters">Parameters</div>
@@ -235,6 +238,16 @@
                         <select id="settings-lang">
                             <option value="en">English</option>
                             <option value="zh">中文</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-page" id="settings-page-theme" style="display:none">
+                    <div class="config-group">
+                        <label data-i18n="settings.theme_mode">Theme Mode</label>
+                        <select id="settings-theme">
+                            <option value="auto" data-i18n="settings.theme_auto">Auto (System)</option>
+                            <option value="light" data-i18n="settings.theme_light">Light</option>
+                            <option value="dark" data-i18n="settings.theme_dark">Dark</option>
                         </select>
                     </div>
                 </div>
