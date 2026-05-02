@@ -14,7 +14,7 @@ from backend.utils import make_loss_fn, serialize_tensor
 # ---------------------------------------------------------------------------
 
 
-def run_training_sync(model, optimizer, loss_fn, train_loader, test_loader, task_type, epochs, progress_callback=None):
+def run_training_sync(model, optimizer, loss_fn, train_loader, test_loader, task_type, epochs, progress_callback=None, gradient_ascent=False):
     """Run the training loop synchronously.
 
     Args:
@@ -45,7 +45,10 @@ def run_training_sync(model, optimizer, loss_fn, train_loader, test_loader, task
             optimizer.zero_grad()
             output = model(x)
             loss = loss_fn(output, y)
-            loss.backward()
+            if gradient_ascent:
+                (-loss).backward()
+            else:
+                loss.backward()
             optimizer.step()
 
             batch_global += 1
@@ -159,7 +162,10 @@ async def run_training(session, payload, ws):
                 optimizer.zero_grad()
                 output = model(x)
                 loss = loss_fn(output, y)
-                loss.backward()
+                if session.gradient_ascent:
+                    (-loss).backward()
+                else:
+                    loss.backward()
                 optimizer.step()
 
                 batch_global += 1

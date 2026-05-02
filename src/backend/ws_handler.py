@@ -195,18 +195,22 @@ class _Dispatcher:
 
         opt_name = payload.get("optimizer", "Adam")
         params = payload.get("params", {})
+        gradient_ascent = payload.get("gradient_ascent", False)
 
         optimizer_cls = getattr(torch.optim, opt_name, None)
         if optimizer_cls is None:
             raise ValueError(f"Unknown optimizer: {opt_name}")
 
         session.optimizer = optimizer_cls(session.model.parameters(), **params)
+        session.gradient_ascent = gradient_ascent
+        session.invalidate_cache()
 
         return {
             "status": "ok",
             "optimizer": opt_name,
             "param_count": session.param_count,
             "config": params,
+            "gradient_ascent": gradient_ascent,
         }
 
     @staticmethod
@@ -226,12 +230,14 @@ class _Dispatcher:
             raise ValueError("'optimizer' must be a torch.optim.Optimizer instance")
 
         session.optimizer = optimizer
+        session.gradient_ascent = payload.get("gradient_ascent", False)
         session.invalidate_cache()
 
         return {
             "status": "ok",
             "optimizer": type(optimizer).__name__,
             "custom": True,
+            "gradient_ascent": session.gradient_ascent,
         }
 
     @staticmethod

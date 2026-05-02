@@ -204,6 +204,7 @@ def _run_training(req):
     result = run_training_sync(
         model, optimizer, loss_fn, loader, None,
         task_type, epochs, progress_callback=progress_cb,
+        gradient_ascent=req["params"].get("gradient_ascent", False),
     )
 
     return {

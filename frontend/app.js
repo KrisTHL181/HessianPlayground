@@ -10,6 +10,19 @@ const DATASET_DEFAULTS = {
 };
 
 // ============================================================
+// Toast notification
+// ============================================================
+function showToast(message, duration = 3000) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+        toast.classList.remove('show');
+    }, duration);
+}
+
+// ============================================================
 // WebSocket Manager
 // ============================================================
 class WebSocketManager {
@@ -1022,11 +1035,17 @@ class App {
 
     async _setOptimizer() {
         const optName = document.getElementById('optimizer-select').value;
-        const lr = parseFloat(document.getElementById('lr-input').value) || 0.001;
+        let lr = parseFloat(document.getElementById('lr-input').value) || 0.001;
+        let gradientAscent = false;
+        if (lr < 0) {
+            gradientAscent = true;
+            lr = Math.abs(lr);
+            showToast('使用梯度上升模式');
+        }
         try {
             if (optName === 'custom') {
                 const code = document.getElementById('custom-opt-code').value;
-                await this.ws.send('set_custom_optimizer', { code });
+                await this.ws.send('set_custom_optimizer', { code, gradient_ascent: gradientAscent });
             } else {
                 const defaultParams = { lr };
                 if (optName === 'SGD') defaultParams.momentum = 0.9;
@@ -1034,9 +1053,10 @@ class App {
                     defaultParams.betas = [0.9, 0.999];
                     defaultParams.eps = 1e-8;
                 }
-                await this.ws.send('set_optimizer', { optimizer: optName, params: defaultParams });
+                await this.ws.send('set_optimizer', { optimizer: optName, params: defaultParams, gradient_ascent: gradientAscent });
             }
             this.state.hasOptimizer = true;
+            this.state.gradientAscent = gradientAscent;
         } catch (e) {
             this.log.error(`Optimizer error: ${e.message}`);
             throw e;

@@ -10,6 +10,7 @@ class Session:
     def __init__(self):
         self.model: nn.Module | None = None
         self.optimizer: torch.optim.Optimizer | None = None
+        self.gradient_ascent: bool = False
         self.loss_fn: callable | None = None
 
         self.train_loader = None

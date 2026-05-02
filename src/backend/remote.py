@@ -204,10 +204,17 @@ class RemoteExecutor:
     def run_training(self, session, payload):
         data = self._serialize_session(session)
         data["type"] = "run_training"
+
+        # Extract the actual learning rate from the optimizer
+        optimizer_lr = cfg.DEFAULT_LEARNING_RATE
+        if session.optimizer is not None:
+            optimizer_lr = session.optimizer.param_groups[0].get("lr", cfg.DEFAULT_LEARNING_RATE)
+
         data["params"] = {
             "epochs": payload.get("epochs", cfg.DEFAULT_EPOCHS),
             "batch_size": payload.get("batch_size", cfg.DEFAULT_BATCH_SIZE) if hasattr(session, 'train_loader') else cfg.DEFAULT_BATCH_SIZE,
-            "lr": cfg.DEFAULT_LEARNING_RATE,
+            "lr": optimizer_lr,
+            "gradient_ascent": session.gradient_ascent,
         }
         if session.loss_fn is None:
             data["loss_fn"] = "cross_entropy" if session.task_type == "classification" else "mse"
