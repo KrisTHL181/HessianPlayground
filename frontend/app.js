@@ -375,8 +375,11 @@ class VisualizationPanel {
         if (tab === 'hessian') {
             this._hessianData = null;
             this._hessianDiagToggled = false;
+            this._zoomHandler = null;
             const btn = document.getElementById('btn-diag-toggle');
             if (btn) btn.style.display = 'none';
+            const btnLabels = document.getElementById('btn-labels-toggle');
+            if (btnLabels) btnLabels.style.display = 'none';
             const badge = document.getElementById('hessian-method-badge');
             if (badge) badge.style.display = 'none';
             const subSel = document.getElementById('hessian-sub-selector');
@@ -442,7 +445,7 @@ class VisualizationPanel {
         }
 
         // Hide sub-selectors initially
-        ['kfac-layer-select', 'block-select', 'btn-diag-toggle'].forEach(id => {
+        ['kfac-layer-select', 'block-select', 'btn-diag-toggle', 'btn-labels-toggle'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
         });
@@ -466,18 +469,45 @@ class VisualizationPanel {
         const isDiag = result.is_diagonal;
         const N = labels.length;
 
-        const step = Math.max(1, Math.floor(N / 40));
-        const showTicks = labels.map((_, i) => i).filter((_, i) => i % step === 0);
-        const showText = labels.filter((_, i) => i % step === 0);
+        // Evenly sample ticks to keep heatmap readable and avoid browser lag
+        const MAX_VISIBLE_TICKS = 25;
+        let tickVals, tickText;
+        if (N > MAX_VISIBLE_TICKS) {
+            const step = Math.ceil(N / MAX_VISIBLE_TICKS);
+            tickVals = [];
+            tickText = [];
+            for (let i = 0; i < N; i += step) {
+                tickVals.push(i);
+                tickText.push(labels[i]);
+            }
+            // Always show the last label for visual closure
+            if (tickVals[tickVals.length - 1] !== N - 1) {
+                tickVals.push(N - 1);
+                tickText.push(labels[N - 1]);
+            }
+        } else {
+            tickVals = labels.map((_, i) => i);
+            tickText = labels;
+        }
 
         const flat = Array.isArray(matrix) ? matrix.flat(2) : (matrix.data || []);
         const absMax = Math.max(...flat.map(v => Math.abs(v || 0)), 0.001);
 
+        // Build hover text matrix: each cell shows its x/y label and z value
+        const zarr = Array.isArray(matrix) && Array.isArray(matrix[0]) ? matrix : [matrix];
+        const hovertext = zarr.map((row, i) =>
+            row.map((v, j) =>
+                `x: ${labels[j]}<br>y: ${labels[i]}<br>z: ${Number(v).toExponential(2)}`
+            )
+        );
+
         this._hessianData = {
             type: 'single', matrix, labels, isDiag,
-            tickvals: showTicks, ticktext: showText, absMax,
+            tickvals: tickVals, ticktext: tickText, absMax,
+            hovertext: hovertext,
         };
         this._hessianDiagToggled = false;
+        this._showAxisLabels = true;
 
         this._renderSingleHeatmap();
     }
@@ -496,36 +526,148 @@ class VisualizationPanel {
         if (!d || d.type !== 'single') return;
 
         let matrix = d.matrix;
+        let hovertext = d.hovertext;
         if (this._hessianDiagToggled && !d.isDiag) {
             matrix = d.matrix.map((row, i) =>
                 row.map((v, j) => i === j ? v : 0)
             );
+            hovertext = d.matrix.map((row, i) =>
+                row.map((v, j) => {
+                    const val = i === j ? v : 0;
+                    return `x: ${d.labels[j]}<br>y: ${d.labels[i]}<br>z: ${Number(val).toExponential(2)}`;
+                })
+            );
         }
+
+        const showLabels = this._showAxisLabels !== false;
 
         const C = getThemeColors();
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
             font: { color: C.plotFont, size: 9 },
-            margin: { l: 120, r: 20, t: 30, b: 60 },
-            xaxis: { tickvals: d.tickvals, ticktext: d.ticktext, tickangle: 45, tickfont: { size: 8 } },
-            yaxis: { tickvals: d.tickvals, ticktext: d.ticktext, autorange: 'reversed', tickfont: { size: 8 } },
+            margin: { l: showLabels ? 120 : 40, r: 20, t: 30, b: showLabels ? 60 : 30 },
+            autosize: true,
+            xaxis: {
+                tickvals: d.tickvals, ticktext: d.ticktext, tickangle: 45,
+                tickfont: { size: 10 }, automargin: true,
+                showticklabels: showLabels,
+            },
+            yaxis: {
+                tickvals: d.tickvals, ticktext: d.ticktext, autorange: 'reversed',
+                tickfont: { size: 10 }, automargin: true,
+                showticklabels: showLabels,
+            },
             title: this._hessianDiagToggled ? t('plot.diagonal_hessian') : (d.isDiag ? t('plot.diagonal_hessian') : t('plot.hessian_matrix')),
             titlefont: { size: 12, color: C.plotFont },
         };
-        Plotly.react(div, [{
+
+        const trace = {
             z: matrix,
             type: 'heatmap',
             colorscale: 'RdBu',
             zmin: -d.absMax,
             zmax: d.absMax,
-        }], layout, { responsive: true });
+            hovertext: hovertext,
+            hoverinfo: 'text',
+        };
 
-        const btn = document.getElementById('btn-diag-toggle');
-        if (btn) {
-            btn.style.display = d.isDiag ? 'none' : 'block';
-            btn.textContent = t('btn.diagonal_only');
+        Plotly.react(div, [trace], layout, { responsive: true });
+
+        this._setupZoomHandler(div);
+
+        const btnDiag = document.getElementById('btn-diag-toggle');
+        if (btnDiag) {
+            btnDiag.style.display = d.isDiag ? 'none' : 'block';
+            btnDiag.textContent = t('btn.diagonal_only');
         }
+
+        const btnLabels = document.getElementById('btn-labels-toggle');
+        if (btnLabels) {
+            btnLabels.style.display = 'block';
+            btnLabels.textContent = t(showLabels ? 'btn.hide_labels' : 'btn.show_labels');
+            btnLabels.title = t(showLabels ? 'btn.hide_labels' : 'btn.show_labels');
+        }
+    }
+
+    _setupZoomHandler(div) {
+        // Remove our previous listener (singular) so we don't accumulate them.
+        // NEVER use removeAllListeners — that strips Plotly's internal handlers.
+        if (this._zoomHandler && div.removeListener) {
+            div.removeListener('plotly_relayout', this._zoomHandler);
+        }
+        this._zoomHandler = (ed) => {
+            if (this._suppressTickUpdate) return;
+            if (!ed) return;
+            // The event data format varies by Plotly version and trigger:
+            //   drag-zoom  → {'xaxis.range[0]': v0, 'xaxis.range[1]': v1, ...}
+            //   auto-range → {'xaxis.autorange': true, ...}
+            //   relayout   → {'xaxis.range': [v0, v1], ...}
+            const hasZoom = ed['xaxis.range[0]'] !== undefined
+                         || ed['xaxis.range[1]'] !== undefined
+                         || ed['xaxis.range'] !== undefined
+                         || ed['yaxis.range[0]'] !== undefined
+                         || ed['yaxis.range[1]'] !== undefined
+                         || ed['yaxis.range'] !== undefined;
+            const hasReset = ed['xaxis.autorange'] !== undefined
+                          || ed['yaxis.autorange'] !== undefined;
+            if (hasZoom || hasReset) this._updateTicksForZoom();
+        };
+        div.on('plotly_relayout', this._zoomHandler);
+    }
+
+    _updateTicksForZoom() {
+        try {
+            const d = this._hessianData;
+            if (!d || d.type !== 'single') return;
+            const div = this._getDiv('hessian');
+            const layout = div._fullLayout;
+            if (!layout) return;
+            const xaxis = layout.xaxis;
+            if (!xaxis || !xaxis.range) return;
+
+            const r = xaxis.range;
+            const viewStart = Math.max(0, Math.floor(r[0]));
+            const viewEnd = Math.min(d.labels.length - 1, Math.ceil(r[1]));
+            const visibleCount = viewEnd - viewStart + 1;
+
+            const showLabels = this._showAxisLabels !== false;
+            const DENSE_THRESHOLD = 30;
+
+            let tickVals, tickText;
+            if (visibleCount <= DENSE_THRESHOLD) {
+                // Zoomed in close: show every label in the visible range
+                tickVals = [];
+                tickText = [];
+                for (let i = viewStart; i <= viewEnd; i++) {
+                    tickVals.push(i);
+                    tickText.push(d.labels[i]);
+                }
+            } else {
+                // Zoomed out: sample evenly across visible range
+                const step = Math.ceil(visibleCount / 25);
+                tickVals = [];
+                tickText = [];
+                for (let i = viewStart; i <= viewEnd; i += step) {
+                    tickVals.push(i);
+                    tickText.push(d.labels[i]);
+                }
+                if (tickVals[tickVals.length - 1] !== viewEnd) {
+                    tickVals.push(viewEnd);
+                    tickText.push(d.labels[viewEnd]);
+                }
+            }
+
+            this._suppressTickUpdate = true;
+            Plotly.relayout(div, {
+                'xaxis.tickvals': tickVals,
+                'xaxis.ticktext': tickText,
+                'xaxis.showticklabels': showLabels,
+                'yaxis.tickvals': tickVals,
+                'yaxis.ticktext': tickText,
+                'yaxis.showticklabels': showLabels,
+            }).then(() => { this._suppressTickUpdate = false; });
+        } catch (_) { /* ignore transient errors during rapid zoom */ }
     }
 
     _showKfacView(result) {
@@ -547,6 +689,7 @@ class VisualizationPanel {
             this._renderKfacLayer();
         };
         document.getElementById('btn-diag-toggle').style.display = 'none';
+        document.getElementById('btn-labels-toggle').style.display = 'none';
         document.getElementById('block-select').style.display = 'none';
         this._renderKfacLayer();
     }
@@ -612,6 +755,7 @@ class VisualizationPanel {
             this._renderBlockDetail();
         };
         document.getElementById('btn-diag-toggle').style.display = 'none';
+        document.getElementById('btn-labels-toggle').style.display = 'none';
         document.getElementById('kfac-layer-select').style.display = 'none';
         this._renderBlockDetail();
     }
@@ -1200,6 +1344,12 @@ class App {
         // Diagonal toggle for Hessian heatmap
         document.getElementById('btn-diag-toggle').onclick = () => {
             this.vis._hessianDiagToggled = !this.vis._hessianDiagToggled;
+            this.vis._renderHessian();
+        };
+
+        // Axis labels toggle for Hessian heatmap
+        document.getElementById('btn-labels-toggle').onclick = () => {
+            this.vis._showAxisLabels = !this.vis._showAxisLabels;
             this.vis._renderHessian();
         };
 

@@ -228,7 +228,7 @@ def hessian_to_display_matrix(cached, model):
                     j_end = min(j_start + chunk_size, n)
                     display_matrix[i, j] = H[i_start:i_end, j_start:j_end].mean()
 
-    labels = _generate_labels(model)
+    labels = _generate_display_labels(model, n, display_size)
 
     return {
         "hessian_matrix": display_matrix.tolist(),
@@ -238,16 +238,50 @@ def hessian_to_display_matrix(cached, model):
     }
 
 
-def _generate_labels(model):
-    """Generate readable dimension labels from model parameter groups."""
-    labels = []
+def _generate_display_labels(model, n_total, display_size):
+    """Generate display_size labels describing which original parameters each block covers.
+
+    When the display matrix is block-averaged (display_size < n_total), each label
+    names the parameter(s) and index ranges that the block aggregates.
+    When display_size >= n_total, every parameter element gets its own label.
+    """
+    # Build (name, start, end) spans for the flattened parameter vector
+    param_spans = []
+    idx = 0
     for name, param in model.named_parameters():
         numel = param.numel()
-        if numel <= 50:
-            for i in range(numel):
-                labels.append(f"{name}[{i}]" if numel > 1 else name)
-        else:
-            labels.append(f"{name}")
+        if numel > 0:
+            param_spans.append((name, idx, idx + numel))
+            idx += numel
+
+    labels = []
+    if display_size >= n_total:
+        for name, start, end in param_spans:
+            numel = end - start
+            if numel == 1:
+                labels.append(name)
+            else:
+                for i in range(numel):
+                    labels.append(f"{name}[{i}]")
+        return labels
+
+    chunk_size = (n_total + display_size - 1) // display_size
+    for i in range(display_size):
+        block_start = i * chunk_size
+        block_end = min(block_start + chunk_size, n_total)
+        covering = []
+        for name, p_start, p_end in param_spans:
+            if p_end > block_start and p_start < block_end:
+                overlap_start = max(p_start, block_start)
+                overlap_end = min(p_end, block_end)
+                coverage = overlap_end - overlap_start
+                param_len = p_end - p_start
+                if coverage == param_len:
+                    covering.append(name)
+                else:
+                    offset = overlap_start - p_start
+                    covering.append(f"{name}[{offset}..{offset + coverage - 1}]")
+        labels.append(", ".join(covering[:3]) + (", …" if len(covering) > 3 else ""))
     return labels
 
 
@@ -788,7 +822,7 @@ def _block_diag_display(cached, model):
             "block_param_count": count,
         })
 
-    labels = _generate_labels(model)
+    labels = _generate_display_labels(model, N, display_size)
 
     return {
         "display_type": "block_diagonal",
