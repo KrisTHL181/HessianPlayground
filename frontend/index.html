@@ -113,6 +113,7 @@
                     <label data-i18n="label.learning_rate">Learning Rate</label>
                     <input type="number" id="lr-input" value="0.001" step="0.0001">
                 </div>
+                <div id="optimizer-params-group" style="display:none;margin-bottom:10px;padding:8px;background:var(--surface);border-radius:8px;border:1px solid var(--border)"></div>
                 <div class="config-group">
                     <label data-i18n="label.batch_size">Batch Size</label>
                     <input type="number" id="batch-size" value="64" min="1" max="1024">
@@ -120,6 +121,32 @@
                 <div class="config-group">
                     <label data-i18n="label.epochs">Epochs</label>
                     <input type="number" id="epochs-input" value="5" min="1" max="1000">
+                </div>
+                <div class="config-group">
+                    <label data-i18n="label.snapshot_interval">Snapshot Interval (batches, 0=auto)</label>
+                    <input type="number" id="snapshot-interval" value="0" min="0" max="10000">
+                    <span id="snapshot-estimate" style="font-size:10px;color:var(--text-dim)"></span>
+                </div>
+
+                <hr style="border-color:var(--border);margin-bottom:10px">
+
+                <div class="config-group">
+                    <label data-i18n="label.hessian_method">Hessian Method</label>
+                    <select id="hessian-method">
+                        <option value="auto" data-i18n="opt.hessian_auto">Auto Select (Recommended)</option>
+                        <option value="full" data-i18n="opt.hessian_full">Full Hessian (≤2K params)</option>
+                        <option value="diagonal" data-i18n="opt.hessian_diagonal">Diagonal (Hutchinson)</option>
+                        <option value="kfac" data-i18n="opt.hessian_kfac">K-FAC (MLP Recommended)</option>
+                        <option value="block_diag" data-i18n="opt.hessian_block_diag">Block-Diagonal (≤50K params)</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label data-i18n="label.hessian_dtype">Storage Precision</label>
+                    <select id="hessian-dtype">
+                        <option value="float32" data-i18n="opt.dtype_fp32">FP32 (High Precision)</option>
+                        <option value="float16" data-i18n="opt.dtype_fp16">FP16 (Half, 2x savings)</option>
+                        <option value="bfloat16" data-i18n="opt.dtype_bf16">BF16 (Mixed, 2x savings)</option>
+                    </select>
                 </div>
 
                 <hr style="border-color:var(--border);margin-bottom:10px">
@@ -154,12 +181,18 @@
                 </div>
                 <div class="vis-content">
                     <div id="plot-loss"></div>
-                    <div id="plot-hessian" style="display:none"></div>
+                    <div id="plot-hessian" style="display:none">
+                        <div id="hessian-sub-selector" style="display:none;position:absolute;top:8px;left:12px;z-index:10;gap:4px;flex-wrap:wrap">
+                            <select id="kfac-layer-select" style="display:none;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:11px;padding:2px 6px"></select>
+                            <select id="block-select" style="display:none;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:11px;padding:2px 6px"></select>
+                        </div>
+                    </div>
                     <div id="plot-landscape" style="display:none"></div>
                     <div id="plot-eigenvalues" style="display:none"></div>
                     <div id="plot-equation" style="display:none"></div>
                     <button class="btn btn-ghost hessian-diag-btn" id="btn-diag-toggle" style="display:none"
                         data-i18n-title="btn.diagonal_only" title="Highlight only diagonal elements" data-i18n="btn.diagonal_only">Diagonal Only</button>
+                    <span class="hessian-method-badge" id="hessian-method-badge" style="display:none;position:absolute;top:8px;right:12px;z-index:10;font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface2);color:var(--text-dim)"></span>
                 </div>
             </div>
         </div>

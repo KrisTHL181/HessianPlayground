@@ -24,7 +24,7 @@ class Session:
         self.accuracy_history: list[float] = []
         self.param_snapshots: list[dict] = []
 
-        self._cached_hessian: tuple | None = None  # (H, is_diagonal)
+        self._cached_hessian: dict | None = None  # {"type": ..., "data": ..., "param_count": ..., "memory_mb": ...}
         self._cached_gradient: torch.Tensor | None = None
         self._cached_eigenvalues: dict | None = None
 

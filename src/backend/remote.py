@@ -138,7 +138,9 @@ class RemoteExecutor:
         if session._cached_hessian is None:
             raise ValueError("Compute Hessian first")
 
-        H, is_diag = session._cached_hessian
+        cache = session._cached_hessian
+        H = cache["data"]
+        is_diag = cache["type"] == "diagonal"
 
         data = {
             "type": "compute_eigenvalues",

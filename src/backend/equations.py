@@ -2,73 +2,121 @@
 
 import torch
 
-import backend.config as cfg
-from backend.utils import apply_flat_delta, serialize_tensor
 
-# ---------------------------------------------------------------------------
-# Shared linear system solver
-# ---------------------------------------------------------------------------
-
-
-def _solve_linear_system(H, b, is_diag, regularization, size_threshold):
-    """Solve (H + reg*I) @ x = b. Returns (x, solver_name, converged)."""
-    n = b.numel()
-    if is_diag:
-        H_reg = H + regularization
-        x = b / H_reg
-        return x, "diagonal", True
-
-    H_reg = H + regularization * torch.eye(n)
-    if n < size_threshold:
-        try:
-            x = torch.linalg.solve(H_reg, b)
-            return x, "direct_solve", True
-        except torch.linalg.LinAlgError:
-            x, *_ = torch.linalg.lstsq(H_reg, b.unsqueeze(1))
-            return x.squeeze(1), "lstsq", True
-
-    x, *_ = torch.linalg.lstsq(H_reg, b.unsqueeze(1))
-    return x.squeeze(1), "lstsq", True
+def _safe_dtype(t: torch.Tensor) -> torch.dtype:
+    if t.dtype in (torch.float16, torch.bfloat16):
+        return torch.float32
+    return t.dtype
 
 
 # ---------------------------------------------------------------------------
-# Pure computation kernels — no Session dependency
+# Session-based wrappers
 # ---------------------------------------------------------------------------
 
 
-def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularization, apply_step, step_scale):
+def solve_newton(session, regularization, apply_step, step_scale, ws,
+                 solver="auto", cg_tol=1e-6, cg_max_iter=200):
     """Solve H @ dx = -g for the Newton step, optionally apply it.
 
-    Args:
-        model: nn.Module on the correct device.
-        loss_fn: callable.
-        data_loader: DataLoader for computing loss_before/loss_after.
-        g: [N] flat gradient vector.
-        H: [N,N] or [N] Hessian (full matrix or diagonal vector).
-        is_diag: bool, whether H is a diagonal vector.
-        regularization: float, Tikhonov regularization factor.
-        apply_step: bool, whether to update model parameters.
-        step_scale: float, multiplier for the step.
-
-    Returns dict with step_type, loss_before, loss_after, loss_improvement,
-    step_norm, gradient_norm, solver_used, regularization_used, converged,
-    iterations, step_applied, and optionally model_state (bytes).
+    Supports full, diagonal, kfac, block_diag, and matrix-free CG methods.
     """
+    if session.model is None:
+        raise ValueError("Create a model first")
+
+    model = session.model
+    loss_fn = session.loss_fn
+    data_loader = session.train_loader
+    device = next(model.parameters()).device
+
     loss_before = _compute_loss(model, data_loader, loss_fn)
 
-    dx, solver, converged = _solve_linear_system(H, -g, is_diag, regularization, cfg.DIRECT_SOLVE_SIZE_THRESHOLD)
-    iterations = None
+    # Get gradient
+    x, y = next(iter(data_loader))
+    x, y = x.to(device), y.to(device)
+    model.zero_grad()
+    output = model(x)
+    loss = loss_fn(output, y)
+    loss.backward()
+    g = session.get_flattened_gradients()
 
-    dx = step_scale * dx
+    # Get Hessian (compute diagonal if not cached)
+    if session._cached_hessian is None:
+        from backend.hessian import compute_diagonal_hessian
+        H_diag = compute_diagonal_hessian(session)
+        session._cached_hessian = {
+            "type": "diagonal", "data": H_diag,
+            "param_count": session.param_count,
+            "memory_mb": H_diag.numel() * H_diag.element_size() / 1024 / 1024,
+        }
+
+    cache = session._cached_hessian
+    hessian_type = cache["type"]
+
+    if solver == "auto":
+        if hessian_type == "full" and session.param_count > 5000:
+            solver = "cg"
+        else:
+            solver = hessian_type
+
+    # ---- Dispatch ----
+    if solver == "cg":
+        from backend.hessian import solve_cg
+        cg_result = solve_cg(session, -g, regularization, cg_tol, cg_max_iter)
+        dx = cg_result["solution"]
+        used_solver = "cg"
+        converged = cg_result["converged"]
+        iterations = cg_result["iterations"]
+    elif solver == "diagonal":
+        H = cache["data"]
+        dx = -g / (H + regularization)
+        used_solver = "diagonal"
+        converged = True
+        iterations = None
+    elif solver == "kfac":
+        from backend.hessian import kfac_newton_step
+        dx = kfac_newton_step(g, cache["data"], regularization, step_scale)
+        used_solver = "kfac"
+        converged = True
+        iterations = None
+    elif solver == "block_diag":
+        from backend.hessian import block_diag_newton_step
+        dx = block_diag_newton_step(g, cache["data"], regularization, step_scale)
+        used_solver = "block_diag"
+        converged = True
+        iterations = None
+    else:  # "full"
+        H = cache["data"]
+        n = session.param_count
+        work_dtype = _safe_dtype(H)
+        H_f32 = H.to(work_dtype)
+        H_reg = H_f32 + regularization * torch.eye(n, device=H.device, dtype=work_dtype)
+        rhs_f32 = (-g).to(work_dtype)
+        if n < 5000:
+            try:
+                dx = torch.linalg.solve(H_reg, rhs_f32)
+                used_solver = "direct_solve"
+                converged = True
+                iterations = None
+            except Exception:
+                dx = torch.linalg.lstsq(H_reg, rhs_f32.unsqueeze(1)).solution.squeeze(1)
+                used_solver = "lstsq"
+                converged = True
+                iterations = None
+        else:
+            dx = torch.linalg.lstsq(H_reg, rhs_f32.unsqueeze(1)).solution.squeeze(1)
+            used_solver = "lstsq"
+            converged = True
+            iterations = None
+        dx = dx.to(device=device, dtype=torch.float32)
+
     step_norm = dx.norm().item()
     grad_norm = g.norm().item()
 
     loss_after = None
     step_applied = False
-    model_state = None
     if apply_step:
         original_params = [p.data.clone() for p in model.parameters()]
-        apply_flat_delta(model, dx)
+        session.set_flat_params(session.get_flattened_params() + dx)
         loss_after = _compute_loss(model, data_loader, loss_fn)
         step_applied = True
 
@@ -77,9 +125,6 @@ def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularizati
                 p.data.copy_(orig)
             loss_after = loss_before
             step_applied = False
-
-        if step_applied:
-            model_state = serialize_tensor(model.state_dict())
 
     loss_improvement = loss_before - (loss_after or loss_before)
 
@@ -90,27 +135,17 @@ def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularizati
         "loss_improvement": loss_improvement,
         "step_norm": step_norm,
         "gradient_norm": grad_norm,
-        "solver_used": solver,
+        "solver_used": used_solver,
         "regularization_used": regularization,
         "converged": converged,
         "iterations": iterations,
         "step_applied": step_applied,
-        "model_state": model_state,
     }
 
 
-
-
-# ---------------------------------------------------------------------------
-# Session-based wrappers
-# ---------------------------------------------------------------------------
-
-
-def solve_newton(session, regularization, apply_step, step_scale, ws):
-    """Solve H @ dx = -g for the Newton step, optionally apply it.
-
-    Session-based wrapper that extracts grad/H from session and calls the kernel.
-    """
+def solve_linear(session, rhs, regularization, ws,
+                 solver="auto", cg_tol=1e-6, cg_max_iter=200):
+    """Solve H @ x = b for a user-provided right-hand side."""
     if session.model is None:
         raise ValueError("Create a model first")
 
@@ -118,75 +153,82 @@ def solve_newton(session, regularization, apply_step, step_scale, ws):
     loss_fn = session.loss_fn
     data_loader = session.train_loader
 
-    # Get gradient
-    x, y = next(iter(data_loader))
-    model.zero_grad()
-    output = model(x)
-    loss = loss_fn(output, y)
-    loss.backward()
-    g = session.get_flattened_gradients()
-
-    # Get Hessian
     if session._cached_hessian is None:
         from backend.hessian import compute_diagonal_hessian
         H_diag = compute_diagonal_hessian(session)
-        session._cached_hessian = (H_diag, True)
+        session._cached_hessian = {
+            "type": "diagonal", "data": H_diag,
+            "param_count": session.param_count,
+            "memory_mb": H_diag.numel() * H_diag.element_size() / 1024 / 1024,
+        }
 
-    H, is_diag = session._cached_hessian
-
-    result = solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularization, apply_step, step_scale)
-
-    # If step was applied, unserialize model_state (local wrapper detail)
-    if result.get("step_applied") and result.get("model_state"):
-        del result["model_state"]  # local path doesn't need serialized state
-
-    return result
-
-
-def solve_linear(session, rhs, regularization, ws):
-    """Solve H @ x = b for a user-provided right-hand side.
-
-    Args:
-        rhs: List or None (if None, solve Newton system).
-        regularization: Tikhonov factor.
-
-    Returns result dict.
-    """
-    if session.model is None:
-        raise ValueError("Create a model first")
-
-    model = session.model
-    loss_fn = session.loss_fn
-    data_loader = session.train_loader
-
-    # Get Hessian
-    if session._cached_hessian is None:
-        from backend.hessian import compute_diagonal_hessian
-        H_diag = compute_diagonal_hessian(session)
-        session._cached_hessian = (H_diag, True)
-
-    H, is_diag = session._cached_hessian
+    cache = session._cached_hessian
+    hessian_type = cache["type"]
     n = session.param_count
+    device = next(model.parameters()).device
+
+    if solver == "auto":
+        solver = "cg" if (hessian_type == "full" and n > 5000) else hessian_type
 
     if rhs is not None:
         if len(rhs) != n:
             raise ValueError(f"RHS vector length ({len(rhs)}) must match parameter count ({n})")
-        b = torch.tensor(rhs, dtype=torch.float32)
+        b = torch.tensor(rhs, dtype=torch.float32, device=device)
     else:
-        # Default: use negative gradient
-        x, y = next(iter(data_loader))
+        x_batch, y_batch = next(iter(data_loader))
+        x_batch, y_batch = x_batch.to(device), y_batch.to(device)
         model.zero_grad()
-        output = model(x)
-        loss = loss_fn(output, y)
+        output = model(x_batch)
+        loss = loss_fn(output, y_batch)
         loss.backward()
         b = -session.get_flattened_gradients()
 
-    x, solver, converged = _solve_linear_system(H, b, is_diag, regularization, cfg.DIRECT_SOLVE_SIZE_THRESHOLD)
+    # ---- Dispatch ----
+    if solver == "cg":
+        from backend.hessian import solve_cg
+        cg_result = solve_cg(session, b, regularization, cg_tol, cg_max_iter)
+        x = cg_result["solution"]
+        used_solver = "cg"
+        converged = cg_result["converged"]
+    elif solver == "diagonal":
+        x = b / (cache["data"] + regularization)
+        used_solver = "diagonal"
+        converged = True
+    elif solver == "kfac":
+        from backend.hessian import kfac_newton_step
+        x = -kfac_newton_step(-b, cache["data"], regularization, 1.0)
+        used_solver = "kfac"
+        converged = True
+    elif solver == "block_diag":
+        from backend.hessian import block_diag_newton_step
+        x = -block_diag_newton_step(-b, cache["data"], regularization, 1.0)
+        used_solver = "block_diag"
+        converged = True
+    else:  # "full"
+        H = cache["data"]
+        work_dtype = _safe_dtype(H)
+        H_f32 = H.to(work_dtype)
+        H_reg = H_f32 + regularization * torch.eye(n, device=H.device, dtype=work_dtype)
+        b_f32 = b.to(work_dtype)
+        if n < 5000:
+            try:
+                x = torch.linalg.solve(H_reg, b_f32)
+                used_solver = "direct_solve"
+                converged = True
+            except Exception:
+                x = torch.linalg.lstsq(H_reg, b_f32.unsqueeze(1)).solution.squeeze(1)
+                used_solver = "lstsq"
+                converged = True
+        else:
+            x = torch.linalg.lstsq(H_reg, b_f32.unsqueeze(1)).solution.squeeze(1)
+            used_solver = "lstsq"
+            converged = True
+        x = x.to(device=device, dtype=torch.float32)
 
     return {
         "step_type": "linear_system",
         "solution_norm": x.norm().item(),
-        "solver_used": solver,
+        "solver_used": used_solver,
         "regularization_used": regularization,
         "converged": converged,
         "step_applied": False,
@@ -195,11 +237,13 @@ def solve_linear(session, rhs, regularization, ws):
 
 def _compute_loss(model, data_loader, loss_fn):
     """Compute average loss over the data loader."""
+    device = next(model.parameters()).device
     model.eval()
     total_loss = 0.0
     total_samples = 0
     with torch.no_grad():
         for x, y in data_loader:
+            x, y = x.to(device), y.to(device)
             output = model(x)
             cur_loss = loss_fn(output, y)
             total_loss += cur_loss.item() * x.size(0)

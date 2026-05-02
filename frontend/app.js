@@ -9,6 +9,44 @@ const DATASET_DEFAULTS = {
     polynomial: { inputSize: 1, outputSize: 1 },
 };
 
+// Optimizer-specific hyperparameter definitions
+const OPTIMIZER_PARAMS = {
+    SGD: [
+        { name: 'momentum', label: 'Momentum', type: 'number', defaultValue: 0.9, step: 0.1, min: 0 },
+        { name: 'weight_decay', label: 'Weight Decay', type: 'number', defaultValue: 0, step: 0.0001, min: 0 },
+        { name: 'nesterov', label: 'Nesterov', type: 'checkbox', defaultValue: false },
+    ],
+    Adam: [
+        { name: 'betas_0', label: 'β₁', type: 'number', defaultValue: 0.9, step: 0.01, min: 0 },
+        { name: 'betas_1', label: 'β₂', type: 'number', defaultValue: 0.999, step: 0.001, min: 0 },
+        { name: 'eps', label: 'ε', type: 'number', defaultValue: 1e-8, step: 1e-8, min: 0 },
+        { name: 'weight_decay', label: 'Weight Decay', type: 'number', defaultValue: 0, step: 0.0001, min: 0 },
+    ],
+    AdamW: [
+        { name: 'betas_0', label: 'β₁', type: 'number', defaultValue: 0.9, step: 0.01, min: 0 },
+        { name: 'betas_1', label: 'β₂', type: 'number', defaultValue: 0.999, step: 0.001, min: 0 },
+        { name: 'eps', label: 'ε', type: 'number', defaultValue: 1e-8, step: 1e-8, min: 0 },
+        { name: 'weight_decay', label: 'Weight Decay', type: 'number', defaultValue: 0.01, step: 0.0001, min: 0 },
+    ],
+    RMSprop: [
+        { name: 'alpha', label: 'Smoothing', type: 'number', defaultValue: 0.99, step: 0.01, min: 0 },
+        { name: 'momentum', label: 'Momentum', type: 'number', defaultValue: 0, step: 0.1, min: 0 },
+        { name: 'weight_decay', label: 'Weight Decay', type: 'number', defaultValue: 0, step: 0.0001, min: 0 },
+    ],
+    Adagrad: [
+        { name: 'lr_decay', label: 'LR Decay', type: 'number', defaultValue: 0, step: 0.001, min: 0 },
+        { name: 'weight_decay', label: 'Weight Decay', type: 'number', defaultValue: 0, step: 0.0001, min: 0 },
+        { name: 'eps', label: 'ε', type: 'number', defaultValue: 1e-8, step: 1e-8, min: 0 },
+    ],
+    Adadelta: [
+        { name: 'rho', label: 'Decay', type: 'number', defaultValue: 0.9, step: 0.01, min: 0 },
+        { name: 'weight_decay', label: 'Weight Decay', type: 'number', defaultValue: 0, step: 0.0001, min: 0 },
+        { name: 'eps', label: 'ε', type: 'number', defaultValue: 1e-6, step: 1e-8, min: 0 },
+    ],
+};
+
+const METHOD_NAMES = { full: 'Full', diagonal: 'Diagonal', kfac: 'K-FAC', block_diag: 'Block-Diag' };
+
 // ============================================================
 // Toast notification
 // ============================================================
@@ -221,12 +259,23 @@ class VisualizationPanel {
         for (const [tab, id] of Object.entries(this._plotIds)) {
             document.getElementById(id).style.display = (tab === tabId) ? 'block' : 'none';
         }
-        // Show/hide diagonal toggle button
-        const btn = document.getElementById('btn-diag-toggle');
-        if (btn) {
-            btn.style.display = (tabId === 'hessian' && this._hessianData && !this._hessianData.isDiag) ? 'block' : 'none';
-        }
-        // Trigger resize on the newly visible plot
+        // Hessian sub-selector visibility
+        const subSel = document.getElementById('hessian-sub-selector');
+        const diagBtn = document.getElementById('btn-diag-toggle');
+        const badge = document.getElementById('hessian-method-badge');
+        const isHessian = tabId === 'hessian';
+        const d = this._hessianData;
+        const isKfac = d && d.type === 'kfac';
+        const isBlkDiag = d && d.type === 'block_diag';
+        const isSingle = d && d.type === 'single';
+        if (subSel) subSel.style.display = (isHessian && (isKfac || isBlkDiag)) ? 'flex' : 'none';
+        if (diagBtn) diagBtn.style.display = (isHessian && isSingle && !d.isDiag) ? 'block' : 'none';
+        if (badge) badge.style.display = (isHessian && d) ? 'block' : 'none';
+        const kfacSel = document.getElementById('kfac-layer-select');
+        const blkSel = document.getElementById('block-select');
+        if (kfacSel) kfacSel.style.display = (isHessian && isKfac) ? 'inline-block' : 'none';
+        if (blkSel) blkSel.style.display = (isHessian && isBlkDiag) ? 'inline-block' : 'none';
+        // Trigger resize
         setTimeout(() => {
             const el = document.getElementById(this._plotIds[tabId]);
             if (el && el._plotly) Plotly.Plots.resize(el);
@@ -244,6 +293,14 @@ class VisualizationPanel {
             this._hessianDiagToggled = false;
             const btn = document.getElementById('btn-diag-toggle');
             if (btn) btn.style.display = 'none';
+            const badge = document.getElementById('hessian-method-badge');
+            if (badge) badge.style.display = 'none';
+            const subSel = document.getElementById('hessian-sub-selector');
+            if (subSel) subSel.style.display = 'none';
+            const kfacSel = document.getElementById('kfac-layer-select');
+            if (kfacSel) kfacSel.style.display = 'none';
+            const blkSel = document.getElementById('block-select');
+            if (blkSel) blkSel.style.display = 'none';
         }
     }
 
@@ -287,31 +344,63 @@ class VisualizationPanel {
         }
     }
 
-    showHessianHeatmap(matrix, labels, isDiag) {
+    showHessianHeatmap(result) {
         const div = this._getDiv('hessian');
-        // Handle labels: backend sends list of strings
-        const labelNames = Array.isArray(labels) ? labels : (labels.names || []);
-        const tickIndices = Array.isArray(labels) ? labels.map((_, i) => i) : (labels.indices || []);
-        // Subsample tick labels if too many
-        const step = Math.max(1, Math.floor(labelNames.length / 30));
-        const showTicks = tickIndices.filter((_, i) => i % step === 0);
-        const showText = labelNames.filter((_, i) => i % step === 0);
+        const method = result.method || 'full';
+        const displayType = result.display_type || 'full';
 
-        // Compute symmetric colorscale range
-        const flat = Array.isArray(matrix) ? matrix.flat() : (matrix.data || []);
-        const absMax = Math.max(...flat.map(v => Math.abs(v || 0)), 0.001);
+        // Method badge
+        const badge = document.getElementById('hessian-method-badge');
+        if (badge) {
+            badge.textContent = METHOD_NAMES[method] || method;
+            badge.style.display = 'block';
+        }
 
-        // Store original data for diagonal toggle
-        this._hessianData = { matrix, labelNames, tickIndices, showTicks, showText, absMax, isDiag };
-        this._hessianDiagToggled = false;
+        // Hide sub-selectors initially
+        ['kfac-layer-select', 'block-select', 'btn-diag-toggle'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        const subSel = document.getElementById('hessian-sub-selector');
+        if (subSel) subSel.style.display = 'none';
 
-        this._renderHessian();
+        if (displayType === 'kfac') {
+            this._showKfacView(result);
+        } else if (displayType === 'block_diagonal') {
+            this._showBlockDiagView(result);
+        } else {
+            this._showSingleHeatmap(result);
+        }
     }
 
-    _renderHessian() {
+    _showSingleHeatmap(result) {
+        const matrix = result.hessian_matrix;
+        if (!matrix) { Plotly.purge(this._getDiv('hessian')); return; }
+
+        const labels = result.dim_labels || [];
+        const isDiag = result.is_diagonal;
+        const N = labels.length;
+
+        const step = Math.max(1, Math.floor(N / 40));
+        const showTicks = labels.map((_, i) => i).filter((_, i) => i % step === 0);
+        const showText = labels.filter((_, i) => i % step === 0);
+
+        const flat = Array.isArray(matrix) ? matrix.flat(2) : (matrix.data || []);
+        const absMax = Math.max(...flat.map(v => Math.abs(v || 0)), 0.001);
+
+        this._hessianData = {
+            type: 'single', matrix, labels, isDiag,
+            tickvals: showTicks, ticktext: showText, absMax,
+        };
+        this._hessianDiagToggled = false;
+
+        this._renderSingleHeatmap();
+    }
+
+    _renderSingleHeatmap() {
         const div = this._getDiv('hessian');
         const d = this._hessianData;
-        if (!d) return;
+        if (!d || d.type !== 'single') return;
 
         let matrix = d.matrix;
         if (this._hessianDiagToggled && !d.isDiag) {
@@ -325,8 +414,8 @@ class VisualizationPanel {
             plot_bgcolor: 'transparent',
             font: { color: '#cdd6f4', size: 9 },
             margin: { l: 120, r: 20, t: 30, b: 60 },
-            xaxis: { tickvals: d.showTicks, ticktext: d.showText, tickangle: 45, tickfont: { size: 8 } },
-            yaxis: { tickvals: d.showTicks, ticktext: d.showText, autorange: 'reversed', tickfont: { size: 8 } },
+            xaxis: { tickvals: d.tickvals, ticktext: d.ticktext, tickangle: 45, tickfont: { size: 8 } },
+            yaxis: { tickvals: d.tickvals, ticktext: d.ticktext, autorange: 'reversed', tickfont: { size: 8 } },
             title: this._hessianDiagToggled ? t('plot.diagonal_hessian') : (d.isDiag ? t('plot.diagonal_hessian') : t('plot.hessian_matrix')),
             titlefont: { size: 12, color: '#cdd6f4' },
         };
@@ -341,8 +430,120 @@ class VisualizationPanel {
         const btn = document.getElementById('btn-diag-toggle');
         if (btn) {
             btn.style.display = d.isDiag ? 'none' : 'block';
-            btn.textContent = this._hessianDiagToggled ? t('btn.diagonal_only') : t('btn.diagonal_only');
+            btn.textContent = t('btn.diagonal_only');
         }
+    }
+
+    _showKfacView(result) {
+        const factors = result.kfac_factors || [];
+        if (factors.length === 0) return;
+
+        this._hessianData = { type: 'kfac', factors, currentIdx: 0 };
+
+        const sel = document.getElementById('kfac-layer-select');
+        const subSel = document.getElementById('hessian-sub-selector');
+        if (!sel) return;
+        sel.innerHTML = factors.map((f, i) =>
+            `<option value="${i}">${f.layer_name} (${f.param_count} params)</option>`
+        ).join('');
+        sel.style.display = 'inline-block';
+        if (subSel) subSel.style.display = 'flex';
+        sel.onchange = () => {
+            this._hessianData.currentIdx = parseInt(sel.value);
+            this._renderKfacLayer();
+        };
+        document.getElementById('btn-diag-toggle').style.display = 'none';
+        document.getElementById('block-select').style.display = 'none';
+        this._renderKfacLayer();
+    }
+
+    _renderKfacLayer() {
+        const div = this._getDiv('hessian');
+        const d = this._hessianData;
+        if (!d || d.type !== 'kfac') return;
+        const f = d.factors[d.currentIdx];
+        if (!f) return;
+
+        const aFlat = f.A_matrix.flat(2);
+        const gFlat = f.G_matrix.flat(2);
+        const absMax = Math.max(
+            ...aFlat.map(v => Math.abs(v || 0)),
+            ...gFlat.map(v => Math.abs(v || 0)),
+            0.001,
+        );
+
+        Plotly.react(div, [
+            {
+                z: f.A_matrix, type: 'heatmap', colorscale: 'RdBu',
+                zmin: -absMax, zmax: absMax, xaxis: 'x', yaxis: 'y',
+                name: 'Input Cov A',
+            },
+            {
+                z: f.G_matrix, type: 'heatmap', colorscale: 'RdBu',
+                zmin: -absMax, zmax: absMax, xaxis: 'x2', yaxis: 'y2',
+                name: 'Gradient Cov G',
+            },
+        ], {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: '#cdd6f4', size: 10 },
+            margin: { l: 60, r: 60, t: 50, b: 50 },
+            grid: { rows: 1, columns: 2, pattern: 'independent' },
+            title: `K-FAC: ${f.layer_name} (${f.in_features}→${f.out_features})`,
+            titlefont: { size: 13, color: '#cdd6f4' },
+            xaxis: { title: 'Input dim' },
+            yaxis: { title: 'Input dim', autorange: 'reversed' },
+            xaxis2: { title: 'Output dim' },
+            yaxis2: { title: 'Output dim', autorange: 'reversed' },
+        }, { responsive: true });
+    }
+
+    _showBlockDiagView(result) {
+        const blocks = result.block_matrices || [];
+        if (blocks.length === 0) { this._showSingleHeatmap(result); return; }
+
+        this._hessianData = { type: 'block_diag', blocks, currentIdx: 0 };
+
+        const sel = document.getElementById('block-select');
+        const subSel = document.getElementById('hessian-sub-selector');
+        if (!sel) return;
+        sel.innerHTML = blocks.map((b, i) =>
+            `<option value="${i}">${b.block_name} (${b.block_param_count} params)</option>`
+        ).join('');
+        sel.style.display = 'inline-block';
+        if (subSel) subSel.style.display = 'flex';
+        sel.onchange = () => {
+            this._hessianData.currentIdx = parseInt(sel.value);
+            this._renderBlockDetail();
+        };
+        document.getElementById('btn-diag-toggle').style.display = 'none';
+        document.getElementById('kfac-layer-select').style.display = 'none';
+        this._renderBlockDetail();
+    }
+
+    _renderBlockDetail() {
+        const div = this._getDiv('hessian');
+        const d = this._hessianData;
+        if (!d || d.type !== 'block_diag') return;
+        const b = d.blocks[d.currentIdx];
+        if (!b) return;
+
+        const flat = b.block_matrix.flat(2);
+        const absMax = Math.max(...flat.map(v => Math.abs(v || 0)), 0.001);
+
+        Plotly.react(div, [{
+            z: b.block_matrix, type: 'heatmap', colorscale: 'RdBu',
+            zmin: -absMax, zmax: absMax,
+        }], {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: '#cdd6f4', size: 10 },
+            margin: { l: 80, r: 20, t: 50, b: 60 },
+            title: `Block: ${b.block_name} (${b.block_param_count} params)`,
+            titlefont: { size: 13, color: '#cdd6f4' },
+            xaxis: { automargin: true },
+            yaxis: { autorange: 'reversed', automargin: true },
+        }, { responsive: true });
     }
 
     showLandscape(gridX, gridY, lossGrid, trajectory, mode) {
@@ -761,11 +962,13 @@ class App {
             lossHistory: [],
             accHistory: [],
             datasetReady: false,
+            _trainSamples: 0,
         };
         this._pendingAdaptation = null;  // 'reset_full' | 'reset_first_last' | 'expand_matrices'
 
         this._setupListeners();
         this._initEmptyPlots();
+        this._updateOptimizerParams();
     }
 
     _initEmptyPlots() {
@@ -787,10 +990,12 @@ class App {
             this.state.datasetReady = false;
             this.state.hasOptimizer = false;
             this.state.training = false;
+            this.state._trainSamples = 0;
             this._setButtons(false);
             document.getElementById('btn-train').disabled = true;
             document.getElementById('btn-stop').disabled = true;
             this.log.warn('Connection restored — backend session was reset. Please recreate model and dataset.');
+            this._updateSnapshotEstimate();
             for (const tab of this.vis.tabs) {
                 if (tab === 'loss') continue;
                 this.vis.showEmpty(tab);
@@ -802,6 +1007,8 @@ class App {
         this.ws.on('training_complete', (p) => this._onTrainingComplete(p));
         this.ws.on('dataset_ready', (p) => {
             this.state.datasetReady = true;
+            this.state._trainSamples = p.train_samples || 0;
+            this._updateSnapshotEstimate();
             // Auto-populate model dimensions from non-custom datasets
             if (p.dataset_name !== 'custom') {
                 if (p.input_size) document.getElementById('input-size').value = p.input_size;
@@ -857,6 +1064,12 @@ class App {
             this.vis._renderHessian();
         };
 
+        // Snapshot estimate
+        document.getElementById('snapshot-interval').oninput = () => this._updateSnapshotEstimate();
+        document.getElementById('epochs-input').onchange = () => this._updateSnapshotEstimate();
+        document.getElementById('batch-size').onchange = () => this._updateSnapshotEstimate();
+        this._updateSnapshotEstimate();
+
         // Dataset toggle
         document.getElementById('dataset-select').onchange = (e) => {
             const isCustom = e.target.value === 'custom';
@@ -885,6 +1098,7 @@ class App {
         document.getElementById('optimizer-select').onchange = (e) => {
             document.getElementById('custom-opt-group').style.display =
                 e.target.value === 'custom' ? 'block' : 'none';
+            this._updateOptimizerParams();
         };
 
         // Hessian modal
@@ -917,6 +1131,95 @@ class App {
             };
             document.onmouseup = () => { document.onmousemove = null; document.onmouseup = null; };
         };
+    }
+
+    // ── Optimizer params UI ──
+    _updateOptimizerParams() {
+        const optName = document.getElementById('optimizer-select').value;
+        const group = document.getElementById('optimizer-params-group');
+        const params = OPTIMIZER_PARAMS[optName];
+
+        if (!params || params.length === 0 || optName === 'custom') {
+            group.innerHTML = '';
+            group.style.display = 'none';
+            return;
+        }
+        group.style.display = 'block';
+
+        let html = '';
+        for (const p of params) {
+            if (p.type === 'checkbox') {
+                html += `<div class="opt-param" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                    <label style="font-size:11px;min-width:80px;margin-bottom:0">${p.label}</label>
+                    <input type="checkbox" id="opt-${p.name}" ${p.defaultValue ? 'checked' : ''}>
+                </div>`;
+            } else {
+                const step = p.step ? `step="${p.step}"` : 'step="any"';
+                const min = p.min !== undefined ? `min="${p.min}"` : '';
+                html += `<div class="opt-param" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                    <label style="font-size:11px;min-width:80px;margin-bottom:0">${p.label}</label>
+                    <input type="number" id="opt-${p.name}" value="${p.defaultValue}" ${step} ${min} style="flex:1;padding:3px 6px;font-size:12px">
+                </div>`;
+            }
+        }
+        group.innerHTML = html;
+    }
+
+    _readOptimizerParams() {
+        const lr = parseFloat(document.getElementById('lr-input').value);
+        const params = { lr: isNaN(lr) ? 0.001 : lr };
+
+        const optName = document.getElementById('optimizer-select').value;
+        const defs = OPTIMIZER_PARAMS[optName];
+        if (!defs || optName === 'custom') return params;
+
+        for (const p of defs) {
+            if (p.name.startsWith('betas_')) continue;
+            if (p.type === 'checkbox') {
+                const el = document.getElementById(`opt-${p.name}`);
+                if (el) params[p.name] = el.checked;
+            } else {
+                const el = document.getElementById(`opt-${p.name}`);
+                if (el) {
+                    const val = parseFloat(el.value);
+                    if (!isNaN(val)) params[p.name] = val;
+                }
+            }
+        }
+
+        if (defs.some(p => p.name === 'betas_0')) {
+            const b0 = parseFloat(document.getElementById('opt-betas_0')?.value || '0.9');
+            const b1 = parseFloat(document.getElementById('opt-betas_1')?.value || '0.999');
+            params.betas = [b0, b1];
+        }
+
+        return params;
+    }
+
+    // ── Snapshot estimate ──
+    _updateSnapshotEstimate() {
+        const el = document.getElementById('snapshot-estimate');
+        const input = document.getElementById('snapshot-interval');
+        if (!el || !input) return;
+        const interval = parseInt(input.value) || 0;
+        if (interval > 0) {
+            const batches = this._estimateTotalBatches();
+            const count = Math.floor(batches / interval);
+            el.textContent = t('snapshot.estimated').replace('{count}', count);
+        } else {
+            const batches = this._estimateTotalBatches();
+            const auto = Math.max(1, Math.floor(batches / 30));
+            const count = Math.floor(batches / auto);
+            el.textContent = t('snapshot.auto').replace('{auto}', auto).replace('{count}', count);
+        }
+    }
+
+    _estimateTotalBatches() {
+        const epochs = parseInt(document.getElementById('epochs-input').value) || 5;
+        const trainSamples = this.state._trainSamples || 800;
+        const batchSize = parseInt(document.getElementById('batch-size').value) || 64;
+        const batchesPerEpoch = Math.max(1, Math.ceil(trainSamples / batchSize));
+        return epochs * batchesPerEpoch;
     }
 
     _setButtons(enabled) {
@@ -981,12 +1284,16 @@ class App {
 
         try {
             const epochs = parseInt(document.getElementById('epochs-input').value) || 5;
+            let snapshotInterval = parseInt(document.getElementById('snapshot-interval').value) || 0;
+            if (snapshotInterval <= 0) {
+                snapshotInterval = Math.max(1, Math.floor(this._estimateTotalBatches() / 30));
+            }
             this.state.lossHistory = [];
             this.state.accHistory = [];
-            this.log.info(`Starting training for ${epochs} epochs...`);
+            this.log.info(`Starting training for ${epochs} epochs, snapshot every ${snapshotInterval} batches...`);
             const result = await this.ws.send('start_training', {
                 epochs,
-                record_params_every: 50,
+                record_params_every: snapshotInterval,
                 record_loss_every: 1,
             });
             if (result.status === 'started') {
@@ -1040,20 +1347,16 @@ class App {
         if (lr < 0) {
             gradientAscent = true;
             lr = Math.abs(lr);
-            showToast('使用梯度上升模式');
+            showToast('Gradient ascent mode');
         }
         try {
             if (optName === 'custom') {
                 const code = document.getElementById('custom-opt-code').value;
                 await this.ws.send('set_custom_optimizer', { code, gradient_ascent: gradientAscent });
             } else {
-                const defaultParams = { lr };
-                if (optName === 'SGD') defaultParams.momentum = 0.9;
-                if (optName === 'Adam' || optName === 'AdamW') {
-                    defaultParams.betas = [0.9, 0.999];
-                    defaultParams.eps = 1e-8;
-                }
-                await this.ws.send('set_optimizer', { optimizer: optName, params: defaultParams, gradient_ascent: gradientAscent });
+                const params = this._readOptimizerParams();
+                params.lr = lr;
+                await this.ws.send('set_optimizer', { optimizer: optName, params, gradient_ascent: gradientAscent });
             }
             this.state.hasOptimizer = true;
             this.state.gradientAscent = gradientAscent;
@@ -1092,26 +1395,31 @@ class App {
             this.log.error('Create a model first');
             return;
         }
-        const useDiag = forceDiag !== null ? forceDiag : true;
-        if (this.state.paramCount > 500 && forceDiag === null) {
+        const method = forceDiag !== null
+            ? (forceDiag ? 'diagonal' : 'full')
+            : document.getElementById('hessian-method').value;
+        const dtype = document.getElementById('hessian-dtype').value;
+
+        // Warn for full Hessian on large models (when not explicitly forced)
+        if ((method === 'full' || method === 'auto') && this.state.paramCount > 2000 && forceDiag === null) {
+            const sizeMB = (this.state.paramCount * this.state.paramCount * 8 / 1024 / 1024).toFixed(0);
             document.getElementById('hessian-modal-text').textContent =
-                `Model has ${this.state.paramCount} parameters. Full Hessian needs ~${(this.state.paramCount * this.state.paramCount * 8 / 1024 / 1024).toFixed(0)} MB and may be slow. Diagonal approximation (fast) is recommended.`;
-            // Keep data-i18n as fallback; dynamic text overrides it
+                `Model has ${this.state.paramCount} parameters. Full Hessian needs ~${sizeMB} MB and may be very slow. Try block-diagonal or K-FAC.`;
             document.getElementById('hessian-modal').classList.add('show');
             return;
         }
         try {
-            this.log.info('Computing Hessian...');
+            this.log.info(`Computing Hessian (method=${method}, dtype=${dtype})...`);
             const result = await this.ws.send('compute_hessian', {
-                use_diagonal_approx: useDiag,
-                sample_batches: 1,
-            });
+                method, use_diagonal_approx: method === 'diagonal',
+                sample_batches: 1, dtype,
+            }, 600000);
             this.vis.switchTab('hessian');
-            this.vis.showHessianHeatmap(result.hessian_matrix, result.dim_labels || [], result.is_diagonal);
+            this.vis.showHessianHeatmap(result);
 
             // Auto-compute eigenvalues
             try {
-                const evResult = await this.ws.send('compute_hessian_eigenvalues', { method: result.is_diagonal ? 'diagonal' : 'exact' });
+                const evResult = await this.ws.send('compute_hessian_eigenvalues', { method: 'auto' });
                 this.vis.showEigenvalues(evResult.eigenvalues, evResult.histogram_bins, evResult.histogram_counts, {
                     min: evResult.min_eigenvalue,
                     max: evResult.max_eigenvalue,
@@ -1119,10 +1427,10 @@ class App {
                     num_positive: evResult.num_positive,
                     num_negative: evResult.num_negative,
                 });
+                this.log.info(`Hessian computed: method=${result.method}, display=${result.display_type}, mem≈${result.memory_mb?.toFixed(1)}MB`);
             } catch (evErr) {
                 this.log.warn(`Eigenvalue computation failed: ${evErr.message}`);
             }
-            this.log.info(`Hessian computed: shape=${result.hessian_shape}, diagonal=${result.is_diagonal}`);
         } catch (e) {
             this.log.error(`Hessian error: ${e.message}`);
         }
@@ -1183,12 +1491,14 @@ class App {
             lossHistory: [],
             accHistory: [],
             datasetReady: false,
+            _trainSamples: 0,
         };
         this._pendingAdaptation = null;
         this._setButtons(false);
         document.getElementById('btn-train').disabled = true;
         document.getElementById('btn-stop').disabled = true;
         this._initEmptyPlots();
+        this._updateSnapshotEstimate();
         this.log.info('Reset complete');
     }
 

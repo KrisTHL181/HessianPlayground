@@ -19,7 +19,6 @@ import torch
 import torch.nn as nn
 
 import backend.config as cfg
-from backend.equations import solve_newton_kernel
 from backend.hessian import (
     compute_diagonal_hessian_kernel,
     compute_eigenvalues,
@@ -111,7 +110,13 @@ def _compute_eigenvalues(req):
     H = deserialize_tensor(req["hessian"])
     is_diag = req.get("is_diagonal", False)
     method = req["params"].get("method", "exact" if not is_diag else "diagonal")
-    return compute_eigenvalues(H, method, is_diag)
+    param_count = H.shape[0] if H.ndim > 1 else H.numel()
+    cached = {
+        "type": "diagonal" if is_diag else "full",
+        "data": H,
+        "param_count": param_count,
+    }
+    return compute_eigenvalues(cached, method)
 
 
 def _compute_landscape(req):
@@ -171,18 +176,76 @@ def _solve_newton(req):
     # Compute diagonal Hessian (remote always uses diagonal)
     n = g.numel()
     H = compute_diagonal_hessian_kernel(model, x, y, loss_fn, n, num_hutchinson_samples=20)
-    is_diag = True
 
-    # Build a simple DataLoader for loss_before/loss_after computation
+    # Build a simple DataLoader for loss computation
     ds = torch.utils.data.TensorDataset(x.cpu(), y.cpu())
     loader = torch.utils.data.DataLoader(ds, batch_size=len(ds), shuffle=False)
 
-    result = solve_newton_kernel(
-        model, loss_fn, loader, g, H, is_diag,
-        regularization, apply_step, step_scale,
-    )
+    # Compute loss before
+    loss_before = _compute_loss(model, loader, loss_fn, device)
 
+    # Solve: H * dx = -g (diagonal case)
+    H_reg = H + regularization
+    dx = -g / H_reg
+    dx = dx * step_scale
+
+    step_norm = dx.norm().item()
+    grad_norm = g.norm().item()
+
+    loss_after = None
+    step_applied = False
+    from backend.utils import serialize_tensor as _ser
+
+    if apply_step:
+        original_params = [p.data.clone() for p in model.parameters()]
+        offset = 0
+        with torch.no_grad():
+            for p in model.parameters():
+                numel = p.numel()
+                p.data.copy_((p.data.float() + dx[offset:offset + numel].view_as(p.float())).to(p.dtype))
+                offset += numel
+        loss_after = _compute_loss(model, loader, loss_fn, device)
+        step_applied = True
+
+        if loss_after > loss_before * 1.5:
+            for p, orig in zip(model.parameters(), original_params):
+                p.data.copy_(orig)
+            loss_after = loss_before
+            step_applied = False
+
+    loss_improvement = loss_before - (loss_after or loss_before)
+
+    result = {
+        "step_type": "newton",
+        "loss_before": loss_before,
+        "loss_after": loss_after or loss_before,
+        "loss_improvement": loss_improvement,
+        "step_norm": step_norm,
+        "gradient_norm": grad_norm,
+        "solver_used": "diagonal",
+        "regularization_used": regularization,
+        "converged": True,
+        "iterations": None,
+        "step_applied": step_applied,
+    }
+    if step_applied:
+        result["model_state"] = _ser(model.state_dict())
     return result
+
+
+def _compute_loss(model, data_loader, loss_fn, device):
+    """Compute average loss over the data loader."""
+    model.eval()
+    total_loss = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for x_b, y_b in data_loader:
+            x_b, y_b = x_b.to(device), y_b.to(device)
+            output = model(x_b)
+            cur_loss = loss_fn(output, y_b)
+            total_loss += cur_loss.item() * x_b.size(0)
+            total_samples += x_b.size(0)
+    return total_loss / total_samples if total_samples > 0 else 0.0
 
 
 def _run_training(req):

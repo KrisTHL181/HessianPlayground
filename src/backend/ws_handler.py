@@ -130,6 +130,11 @@ def _get_response_type(request_type):
         "solve_linear_system": "equation_solved",
         "get_model_summary": "model_summary",
         "adapt_model": "model_adapted",
+        "get_config": "response",
+        "update_config": "response",
+        "connect_remote": "response",
+        "disconnect_remote": "response",
+        "get_remote_status": "response",
     }
     return mapping.get(request_type, "response")
 
@@ -363,63 +368,128 @@ class _Dispatcher:
             raise ValueError("Create a model first")
         _ensure_loss_fn(session)
 
-        from backend.hessian import compute_diagonal_hessian, compute_full_hessian, hessian_to_display_matrix
+        from backend.hessian import (
+            compute_block_diag_hessian,
+            compute_diagonal_hessian,
+            compute_full_hessian,
+            compute_kfac,
+            hessian_to_display_matrix,
+            quantize_hessian,
+        )
 
+        method = payload.get("method", "auto")
         use_diag = payload.get("use_diagonal_approx", False)
         sample_batches = payload.get("sample_batches", 1)
         force = payload.get("force_compute", False)
+        dtype_str = payload.get("dtype", "float32")
+        dtype = cfg.HESSIAN_DTYPES.get(dtype_str, torch.float32)
+
+        if method == "auto" and use_diag:
+            method = "diagonal"
+
+        n = session.param_count
+
+        if method == "auto":
+            if n <= 2000:
+                method = "full"
+            elif n <= 50000:
+                method = "block_diag"
+            else:
+                method = "kfac"
+
+        # Check cached result — invalidate if method changed
+        if session._cached_hessian is not None and not force:
+            if session._cached_hessian.get("type") != method:
+                session.invalidate_cache()
 
         if session._cached_hessian is not None and not force:
-            H, is_diag = session._cached_hessian
+            cached = session._cached_hessian
+        elif method in ("full", "diagonal") and cfg.REMOTE_ENABLED and _get_remote().connected:
+            loop = asyncio.get_event_loop()
+            remote = _get_remote()
+            H, is_diag = await loop.run_in_executor(
+                None, remote.compute_hessian, session, method == "diagonal", sample_batches)
+            H = H.to(torch.device(cfg.DEVICE))
+            cached = {
+                "type": "diagonal" if is_diag else "full",
+                "data": H,
+                "param_count": n,
+                "memory_mb": H.numel() * H.element_size() / 1024 / 1024,
+            }
         else:
-            n = session.param_count
-            if n > cfg.MAX_PARAM_COUNT_DIAGONAL and not use_diag:
-                await ws.send_json(make_status("warning",
-                    f"Model has {n} parameters. Full Hessian would require significant memory. Using diagonal approximation."))
-                use_diag = True
-
-            if cfg.REMOTE_ENABLED and _get_remote().connected:
-                loop = asyncio.get_event_loop()
-                remote = _get_remote()
-                H, is_diag = await loop.run_in_executor(
-                    None, remote.compute_hessian, session, use_diag, sample_batches)
-                H = H.to(torch.device(cfg.DEVICE))
-            elif use_diag:
-                H = compute_diagonal_hessian(session)
-                is_diag = True
-            else:
+            if method == "full":
+                if n > cfg.MAX_PARAM_COUNT_DIAGONAL:
+                    await ws.send_json(make_status("warning",
+                        f"Model has {n} parameters. Full Hessian will use significant memory."))
                 H = compute_full_hessian(session, max_batches=sample_batches)
-                is_diag = False
-            session._cached_hessian = (H, is_diag)
+                if dtype != torch.float32:
+                    H = quantize_hessian(H, dtype)
+                cached = {
+                    "type": "full", "data": H,
+                    "param_count": n,
+                    "memory_mb": H.numel() * H.element_size() / 1024 / 1024,
+                }
+            elif method == "diagonal":
+                H = compute_diagonal_hessian(session)
+                cached = {
+                    "type": "diagonal", "data": H,
+                    "param_count": n,
+                    "memory_mb": H.numel() * H.element_size() / 1024 / 1024,
+                }
+            elif method == "kfac":
+                await ws.send_json(make_status("info", "Computing K-FAC Hessian approximation..."))
+                kfac_data = compute_kfac(session, sample_batches=sample_batches, dtype=dtype)
+                cached = {
+                    "type": "kfac", "data": kfac_data,
+                    "param_count": n,
+                    "memory_mb": kfac_data.get("memory_mb", 0),
+                }
+            elif method == "block_diag":
+                await ws.send_json(make_status("info", "Computing block-diagonal Hessian..."))
+                bd_data = compute_block_diag_hessian(session, sample_batches=sample_batches, dtype=dtype)
+                cached = {
+                    "type": "block_diag", "data": bd_data,
+                    "param_count": n,
+                    "memory_mb": bd_data.get("memory_mb", 0),
+                }
+            else:
+                raise ValueError(f"Unknown Hessian method: {method}")
+            session._cached_hessian = cached
 
-        # Move Hessian to CPU for display / JSON serialization
-        H_cpu = H.cpu() if H.ndim > 1 else H.cpu()
-        display_matrix, dim_labels = hessian_to_display_matrix(H_cpu, is_diag, session.model)
+        display = hessian_to_display_matrix(cached, session.model)
 
-        return {
-            "num_parameters": session.param_count,
-            "is_diagonal": is_diag,
-            "hessian_matrix": display_matrix.tolist() if hasattr(display_matrix, 'tolist') else display_matrix,
-            "hessian_shape": list(display_matrix.shape),
-            "display_type": "block_averaged" if display_matrix.shape[0] < session.param_count else "full",
-            "dim_labels": dim_labels,
+        result = {
+            "num_parameters": cached["param_count"],
+            "is_diagonal": cached["type"] == "diagonal",
+            "method": cached["type"],
+            "hessian_matrix": display.get("hessian_matrix"),
+            "hessian_shape": display.get("hessian_shape", []),
+            "display_type": display.get("display_type", "full"),
+            "dim_labels": display.get("dim_labels", []),
+            "memory_mb": cached["memory_mb"],
         }
+        if cached["type"] == "kfac":
+            result["kfac_factors"] = display.get("kfac_factors", [])
+        elif cached["type"] == "block_diag":
+            result["block_matrices"] = display.get("block_matrices", [])
+
+        return result
 
     @staticmethod
     async def _handle_compute_eigenvalues(session, payload, ws):
         if session._cached_hessian is None:
             raise ValueError("Compute Hessian first")
 
-        H, is_diag = session._cached_hessian
-        method = payload.get("method", "exact" if not is_diag else "diagonal")
+        cached = session._cached_hessian
+        method = payload.get("method", "exact" if cached["type"] != "diagonal" else "diagonal")
 
-        if cfg.REMOTE_ENABLED and _get_remote().connected:
+        if cfg.REMOTE_ENABLED and _get_remote().connected and cached["type"] in ("full", "diagonal"):
             loop = asyncio.get_event_loop()
             remote = _get_remote()
             result = await loop.run_in_executor(None, remote.compute_eigenvalues, session, method)
         else:
             from backend.hessian import compute_eigenvalues as compute_ev
-            result = compute_ev(H.cpu() if H is not None else H, method, is_diag)
+            result = compute_ev(cached, method)
 
         session._cached_eigenvalues = result
         return result
@@ -461,6 +531,7 @@ class _Dispatcher:
         reg = payload.get("regularization", cfg.DEFAULT_REGULARIZATION)
         apply_step = payload.get("apply_step", True)
         step_scale = payload.get("step_scale", cfg.DEFAULT_STEP_SCALE)
+        solver = payload.get("solver", "auto")
 
         if cfg.REMOTE_ENABLED and _get_remote().connected:
             loop = asyncio.get_event_loop()
@@ -469,7 +540,7 @@ class _Dispatcher:
                 None, remote.solve_newton, session, reg, apply_step, step_scale)
 
         from backend.equations import solve_newton
-        return solve_newton(session, reg, apply_step, step_scale, ws)
+        return solve_newton(session, reg, apply_step, step_scale, ws, solver=solver)
 
     @staticmethod
     async def _handle_solve_linear_system(session, payload, ws):
@@ -480,7 +551,8 @@ class _Dispatcher:
         from backend.equations import solve_linear
         rhs = payload.get("right_hand_side", None)
         reg = payload.get("regularization", 0.0)
-        return solve_linear(session, rhs, reg, ws)
+        solver = payload.get("solver", "auto")
+        return solve_linear(session, rhs, reg, ws, solver=solver)
 
     @staticmethod
     async def _handle_get_model_summary(session, payload, ws):
