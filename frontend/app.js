@@ -1528,7 +1528,7 @@ class App {
         if ((method === 'full' || method === 'auto') && this.state.paramCount > 2000 && forceDiag === null) {
             const sizeMB = (this.state.paramCount * this.state.paramCount * 8 / 1024 / 1024).toFixed(0);
             document.getElementById('hessian-modal-text').textContent =
-                `Model has ${this.state.paramCount} parameters. Full Hessian needs ~${sizeMB} MB and may be very slow. Try block-diagonal or K-FAC.`;
+                t('modal.hessian_warning_dynamic').replace('{count}', this.state.paramCount).replace('{size}', sizeMB);
             document.getElementById('hessian-modal').classList.add('show');
             return;
         }

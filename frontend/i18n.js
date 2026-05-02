@@ -93,6 +93,7 @@ const I18N = {
         // Hessian modal
         'modal.hessian_warning': 'Large Model Warning',
         'modal.hessian_warning_text': 'The model has many parameters. Full Hessian computation may be slow or fail. Use diagonal approximation?',
+        'modal.hessian_warning_dynamic': 'Model has {count} parameters. Full Hessian needs ~{size} MB and may be very slow. Try block-diagonal or K-FAC.',
 
         // Settings (already in place)
         'settings.title': 'Settings',
@@ -241,6 +242,7 @@ const I18N = {
 
         'modal.hessian_warning': '大模型警告',
         'modal.hessian_warning_text': '模型参数较多，完整 Hessian 计算可能较慢或失败。是否使用对角近似？',
+        'modal.hessian_warning_dynamic': '模型有 {count} 个参数。完整 Hessian 需要约 {size} MB 内存，可能非常慢。建议使用分块对角或 K-FAC 方法。',
 
         'settings.title': '设置',
         'settings.language': '语言',
