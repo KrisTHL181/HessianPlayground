@@ -29,6 +29,7 @@ from backend.landscape import (
     generate_random_directions,
     sample_loss_grid_sync,
 )
+from backend.ntk import compute_ntk_kernel, compute_ntk_eigenvalues
 from backend.training import run_training_sync
 from backend.utils import deserialize_tensor, make_loss_fn, serialize_tensor
 
@@ -297,12 +298,50 @@ def _run_training(req):
 # Dispatch
 # ---------------------------------------------------------------------------
 
+
+def _compute_ntk(req):
+    model, x, y, loss_fn, device = _prepare_model_and_data(req)
+    ntk_mode = req["params"].get("ntk_mode", "sample")
+    max_samples = req["params"].get("max_samples", 32)
+    output_size = req["params"].get("output_size", 10)
+    param_count = sum(p.numel() for p in model.parameters())
+
+    ntk_matrix, metadata = compute_ntk_kernel(
+        model, x, param_count, output_size,
+        ntk_mode=ntk_mode, max_samples=max_samples,
+    )
+
+    cached = {
+        "type": "ntk",
+        "data": ntk_matrix.cpu(),
+        "mode": ntk_mode,
+        "N": metadata["N"],
+        "K": metadata["K"],
+        "P": metadata["P"],
+        "memory_mb": metadata["memory_mb"],
+    }
+
+    return {
+        "cached": cached,
+        "model_state": serialize_tensor(model.state_dict()),
+    }
+
+
+def _compute_ntk_eigenvalues(req):
+    cached_ntk = req["cached_ntk"]
+    H = deserialize_tensor(cached_ntk["data"])
+    cached_ntk["data"] = H
+    return compute_ntk_eigenvalues(cached_ntk)
+
+
 DISPATCH = {
     "compute_hessian": _compute_hessian,
     "compute_eigenvalues": _compute_eigenvalues,
     "compute_landscape": _compute_landscape,
     "solve_newton": _solve_newton,
     "run_training": _run_training,
+    "compute_ntk": _compute_ntk,
+    "compute_ntk_eigenvalues": _compute_ntk_eigenvalues,
 }
 
 

@@ -69,6 +69,8 @@ ROUTER = {
     "reset_model": "_handle_reset_model",
     "compute_hessian": "_handle_compute_hessian",
     "compute_hessian_eigenvalues": "_handle_compute_eigenvalues",
+    "compute_ntk": "_handle_compute_ntk",
+    "compute_ntk_eigenvalues": "_handle_compute_ntk_eigenvalues",
     "compute_pca_landscape": "_handle_compute_pca_landscape",
     "compute_random_landscape": "_handle_compute_random_landscape",
     "solve_newton_step": "_handle_solve_newton_step",
@@ -124,6 +126,8 @@ def _get_response_type(request_type):
         "reset_model": "response",
         "compute_hessian": "hessian_computed",
         "compute_hessian_eigenvalues": "hessian_eigenvalues",
+        "compute_ntk": "ntk_computed",
+        "compute_ntk_eigenvalues": "ntk_eigenvalues",
         "compute_pca_landscape": "landscape_computed",
         "compute_random_landscape": "landscape_computed",
         "solve_newton_step": "equation_solved",
@@ -669,6 +673,69 @@ class _Dispatcher:
             "old_output_size": old_output_size,
             "new_output_size": new_output_size,
         }
+
+    @staticmethod
+    async def _handle_compute_ntk(session, payload, ws):
+        if session.model is None:
+            raise ValueError("Create a model first")
+
+        from backend.ntk import compute_ntk, ntk_to_display_matrix
+
+        ntk_mode = payload.get('ntk_mode', 'sample')
+        max_samples = payload.get('max_samples', cfg.NTK_MAX_SAMPLES)
+        force = payload.get('force_compute', False)
+
+        if session._cached_ntk is not None and not force:
+            if session._cached_ntk.get('mode') != ntk_mode:
+                session._cached_ntk = None
+
+        if session._cached_ntk is not None and not force:
+            cached = session._cached_ntk
+        else:
+            if cfg.REMOTE_ENABLED and _get_remote().connected:
+                loop = asyncio.get_event_loop()
+                remote = _get_remote()
+                cached = await loop.run_in_executor(
+                    None, remote.compute_ntk, session, ntk_mode, max_samples)
+            else:
+                cached = compute_ntk(session, max_samples=max_samples, ntk_mode=ntk_mode)
+
+            session._cached_ntk = cached
+
+        display = ntk_to_display_matrix(cached)
+
+        return {
+            'mode': cached['mode'],
+            'N': cached['N'],
+            'K': cached['K'],
+            'P': cached['P'],
+            'ntk_matrix': display['ntk_matrix'],
+            'ntk_shape': display['ntk_shape'],
+            'display_type': display['display_type'],
+            'dim_labels': display['dim_labels'],
+            'memory_mb': cached['memory_mb'],
+        }
+
+    @staticmethod
+    async def _handle_compute_ntk_eigenvalues(session, payload, ws):
+        if session._cached_ntk is None:
+            raise ValueError("Compute NTK first")
+
+        if session._cached_ntk_eigenvalues is not None:
+            return session._cached_ntk_eigenvalues
+
+        from backend.ntk import compute_ntk_eigenvalues
+
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            loop = asyncio.get_event_loop()
+            remote = _get_remote()
+            result = await loop.run_in_executor(
+                None, remote.compute_ntk_eigenvalues, session._cached_ntk)
+        else:
+            result = compute_ntk_eigenvalues(session._cached_ntk)
+
+        session._cached_ntk_eigenvalues = result
+        return result
 
     @staticmethod
     async def _handle_get_config(session, payload, ws):

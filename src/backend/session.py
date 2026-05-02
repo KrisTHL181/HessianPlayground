@@ -27,6 +27,8 @@ class Session:
         self._cached_hessian: dict | None = None  # {"type": ..., "data": ..., "param_count": ..., "memory_mb": ...}
         self._cached_gradient: torch.Tensor | None = None
         self._cached_eigenvalues: dict | None = None
+        self._cached_ntk: dict | None = None
+        self._cached_ntk_eigenvalues: dict | None = None
 
         self.sandbox_globals = {}
         self.sandbox_locals = {}
@@ -55,6 +57,8 @@ class Session:
         self._cached_hessian = None
         self._cached_gradient = None
         self._cached_eigenvalues = None
+        self._cached_ntk = None
+        self._cached_ntk_eigenvalues = None
 
     @property
     def param_count(self):

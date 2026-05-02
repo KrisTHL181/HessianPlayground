@@ -324,7 +324,7 @@ class CodeEditor {
 // ============================================================
 class VisualizationPanel {
     constructor() {
-        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation'];
+        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk'];
         this.currentTab = 'loss';
         this._plotIds = {
             loss: 'plot-loss',
@@ -332,6 +332,7 @@ class VisualizationPanel {
             landscape: 'plot-landscape',
             eigenvalues: 'plot-eigenvalues',
             equation: 'plot-equation',
+            ntk: 'plot-ntk',
         };
     }
 
@@ -879,6 +880,79 @@ class VisualizationPanel {
         };
         Plotly.react(div, traces, layout, { responsive: true });
     }
+
+    showNTKHeatmap(result) {
+        const div = this._getDiv('ntk');
+        const matrix = result.ntk_matrix;
+        if (!matrix) { Plotly.purge(div); return; }
+
+        const labels = result.dim_labels || [];
+        const mode = result.mode || 'sample';
+        const N = labels.length;
+
+        const MAX_VISIBLE_TICKS = 25;
+        let tickVals, tickText;
+        if (N > MAX_VISIBLE_TICKS) {
+            const step = Math.ceil(N / MAX_VISIBLE_TICKS);
+            tickVals = [];
+            tickText = [];
+            for (let i = 0; i < N; i += step) {
+                tickVals.push(i);
+                tickText.push(labels[i]);
+            }
+            if (tickVals[tickVals.length - 1] !== N - 1) {
+                tickVals.push(N - 1);
+                tickText.push(labels[N - 1]);
+            }
+        } else {
+            tickVals = labels.map((_, i) => i);
+            tickText = labels;
+        }
+
+        const flat = Array.isArray(matrix) ? matrix.flat(2) : [];
+        const maxVal = Math.max(...flat.map(v => Math.abs(v || 0)), 0.001);
+
+        const hovertext = matrix.map((row, i) =>
+            row.map((v, j) =>
+                `x: ${labels[j]}<br>y: ${labels[i]}<br>z: ${Number(v).toExponential(2)}`
+            )
+        );
+
+        const C = getThemeColors();
+        const title = mode === 'sample'
+            ? t('plot.ntk_sample')
+            : t('plot.ntk_output');
+
+        const trace = {
+            z: matrix,
+            type: 'heatmap',
+            colorscale: 'RdBu',
+            zmin: -maxVal,
+            zmax: maxVal,
+            hovertext: hovertext,
+            hoverinfo: 'text',
+        };
+
+        const layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 9 },
+            margin: { l: 120, r: 20, t: 30, b: 60 },
+            autosize: true,
+            xaxis: {
+                tickvals: tickVals, ticktext: tickText, tickangle: 45,
+                tickfont: { size: 10 }, automargin: true,
+            },
+            yaxis: {
+                tickvals: tickVals, ticktext: tickText, autorange: 'reversed',
+                tickfont: { size: 10 }, automargin: true,
+            },
+            title: title,
+            titlefont: { size: 12, color: C.plotFont },
+        };
+
+        Plotly.react(div, [trace], layout, { responsive: true });
+    }
 }
 
 // ============================================================
@@ -1331,6 +1405,7 @@ class App {
         document.getElementById('btn-train').onclick = () => this._startTraining();
         document.getElementById('btn-stop').onclick = () => this._stopTraining();
         document.getElementById('btn-hessian').onclick = () => this._computeHessian();
+        document.getElementById('btn-ntk').onclick = () => this._computeNTK();
         document.getElementById('btn-pca-landscape').onclick = () => this._computeLandscape('pca');
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
@@ -1512,7 +1587,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-pca-landscape', 'btn-random-landscape', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-pca-landscape', 'btn-random-landscape', 'btn-newton'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -1722,6 +1797,48 @@ class App {
             }
         } catch (e) {
             this.log.error(tf('log.hessian_error', { message: e.message }));
+        }
+    }
+
+    async _computeNTK() {
+        if (!this.state.hasModel) {
+            this.log.error(t('log.create_model_first'));
+            return;
+        }
+        const ntkMode = document.getElementById('ntk-mode').value;
+        const maxSamples = parseInt(document.getElementById('ntk-max-samples').value) || 32;
+
+        try {
+            this.log.info(tf('log.computing_ntk', { mode: ntkMode, samples: maxSamples }));
+            const result = await this.ws.send('compute_ntk', {
+                ntk_mode: ntkMode,
+                max_samples: maxSamples,
+                force_compute: false,
+            }, 600000);
+
+            this.vis.switchTab('ntk');
+            this.vis.showNTKHeatmap(result);
+
+            // Auto-compute NTK eigenvalues
+            try {
+                const evResult = await this.ws.send('compute_ntk_eigenvalues', {});
+                this.vis.showEigenvalues(evResult.eigenvalues, evResult.histogram_bins, evResult.histogram_counts, {
+                    min: evResult.min_eigenvalue,
+                    max: evResult.max_eigenvalue,
+                    condition: evResult.condition_number,
+                    num_positive: evResult.num_positive,
+                    num_negative: evResult.num_negative,
+                });
+                this.log.info(tf('log.ntk_computed', {
+                    mode: result.mode,
+                    display_type: result.display_type,
+                    memory_mb: result.memory_mb?.toFixed(1),
+                }));
+            } catch (evErr) {
+                this.log.warn(tf('log.ntk_eigenvalue_failed', { message: evErr.message }));
+            }
+        } catch (e) {
+            this.log.error(tf('log.ntk_error', { message: e.message }));
         }
     }
 

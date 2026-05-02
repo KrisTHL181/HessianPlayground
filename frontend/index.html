@@ -151,6 +151,18 @@
                     </select>
                 </div>
 
+                <div class="config-group">
+                    <label data-i18n="label.ntk_mode">NTK Mode</label>
+                    <select id="ntk-mode">
+                        <option value="sample" data-i18n="opt.ntk_sample">Sample NTK (N×N)</option>
+                        <option value="output" data-i18n="opt.ntk_output">Output NTK (K×K)</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label data-i18n="label.ntk_samples">NTK Max Samples</label>
+                    <input type="number" id="ntk-max-samples" value="32" min="2" max="256">
+                </div>
+
                 <hr style="border-color:var(--border);margin-bottom:10px">
 
                 <div class="btn-row">
@@ -160,6 +172,7 @@
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-ghost" id="btn-hessian" disabled data-i18n="btn.hessian">Hessian</button>
+                    <button class="btn btn-ghost" id="btn-ntk" disabled data-i18n="btn.ntk">NTK</button>
                     <button class="btn btn-ghost" id="btn-pca-landscape" disabled data-i18n="btn.pca_landscape">PCA Landscape</button>
                     <button class="btn btn-ghost" id="btn-random-landscape" disabled data-i18n="btn.random_landscape">Random Landscape</button>
                 </div>
@@ -180,6 +193,7 @@
                     <div class="vis-tab" data-tab="landscape" data-i18n="tab.landscape">Landscape</div>
                     <div class="vis-tab" data-tab="eigenvalues" data-i18n="tab.eigenvalues">Eigenvalues</div>
                     <div class="vis-tab" data-tab="equation" data-i18n="tab.equation">Equation</div>
+                    <div class="vis-tab" data-tab="ntk" data-i18n="tab.ntk">NTK</div>
                 </div>
                 <div class="vis-content">
                     <div id="plot-loss"></div>
@@ -192,6 +206,7 @@
                     <div id="plot-landscape" style="display:none"></div>
                     <div id="plot-eigenvalues" style="display:none"></div>
                     <div id="plot-equation" style="display:none"></div>
+                    <div id="plot-ntk" style="display:none"></div>
                     <button class="btn btn-ghost hessian-diag-btn" id="btn-diag-toggle" style="display:none"
                         data-i18n-title="btn.diagonal_only" title="Highlight only diagonal elements" data-i18n="btn.diagonal_only">Diagonal Only</button>
                     <button class="btn btn-ghost hessian-diag-btn" id="btn-labels-toggle" style="display:none"

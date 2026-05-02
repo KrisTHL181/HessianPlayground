@@ -29,6 +29,7 @@ const I18N = {
         'btn.train': 'Train',
         'btn.stop': 'Stop',
         'btn.hessian': 'Hessian',
+        'btn.ntk': 'NTK',
         'btn.pca_landscape': 'PCA Landscape',
         'btn.random_landscape': 'Random Landscape',
         'btn.newton_step': 'Newton Step',
@@ -57,6 +58,8 @@ const I18N = {
         'label.snapshot_interval': 'Snapshot Interval (batches, 0=auto)',
         'label.hessian_method': 'Hessian Method',
         'label.hessian_dtype': 'Storage Precision',
+        'label.ntk_mode': 'NTK Mode',
+        'label.ntk_samples': 'NTK Max Samples',
 
         // Select options
         'opt.custom_code': 'Custom Code',
@@ -74,6 +77,8 @@ const I18N = {
         'opt.dtype_fp32': 'FP32 (High Precision)',
         'opt.dtype_fp16': 'FP16 (Half, 2x savings)',
         'opt.dtype_bf16': 'BF16 (Mixed, 2x savings)',
+        'opt.ntk_sample': 'Sample NTK (N×N)',
+        'opt.ntk_output': 'Output NTK (K×K)',
 
         // Tabs
         'tab.loss': 'Loss',
@@ -81,6 +86,7 @@ const I18N = {
         'tab.landscape': 'Landscape',
         'tab.eigenvalues': 'Eigenvalues',
         'tab.equation': 'Equation',
+        'tab.ntk': 'NTK',
 
         // Placeholders
         'placeholder.hidden_sizes': 'e.g. 128,64',
@@ -162,6 +168,10 @@ const I18N = {
         'plot.count': 'Count',
         'plot.before': 'Before',
         'plot.after': 'After',
+        'plot.ntk_matrix': 'NTK Matrix',
+        'plot.ntk_sample': 'Sample NTK (N×N)',
+        'plot.ntk_output': 'Output NTK (K×K)',
+        'plot.ntk_eigenvalues': 'NTK Eigenvalues',
         "plot.center_point": 'Current Point',
 
         // Curvature matrices
@@ -192,6 +202,10 @@ const I18N = {
         'log.hessian_computed': 'Hessian computed: method={method}, display={display_type}, mem≈{memory_mb}MB',
         'log.eigenvalue_failed': 'Eigenvalue computation failed: {message}',
         'log.hessian_error': 'Hessian error: {message}',
+        'log.computing_ntk': 'Computing NTK (mode={mode}, samples={samples})...',
+        'log.ntk_computed': 'NTK computed: mode={mode}, display={display_type}, mem≈{memory_mb}MB',
+        'log.ntk_error': 'NTK error: {message}',
+        'log.ntk_eigenvalue_failed': 'NTK eigenvalue computation failed: {message}',
         'log.computing_landscape': 'Computing {mode} landscape...',
         'log.landscape_computed': 'Landscape computed ({mode})',
         'log.landscape_error': 'Landscape error: {message}',
@@ -233,6 +247,7 @@ const I18N = {
         'btn.train': '训练',
         'btn.stop': '停止',
         'btn.hessian': 'Hessian',
+        'btn.ntk': 'NTK',
         'btn.pca_landscape': 'PCA 景观',
         'btn.random_landscape': '随机景观',
         'btn.newton_step': '牛顿步',
@@ -260,6 +275,8 @@ const I18N = {
         'label.snapshot_interval': '快照间隔 (批次数, 0=自动)',
         'label.hessian_method': '海森近似方法',
         'label.hessian_dtype': '存储精度',
+        'label.ntk_mode': 'NTK 模式',
+        'label.ntk_samples': 'NTK 最大样本数',
 
         'opt.enabled': '启用',
         'opt.disabled': '禁用',
@@ -276,12 +293,15 @@ const I18N = {
         'opt.dtype_fp32': 'FP32 (高精度)',
         'opt.dtype_fp16': 'FP16 (半精度, 2x节省)',
         'opt.dtype_bf16': 'BF16 (混合精度, 2x节省)',
+        'opt.ntk_sample': '样本 NTK (N×N)',
+        'opt.ntk_output': '输出 NTK (K×K)',
 
         'tab.loss': '损失',
         'tab.hessian': 'Hessian 矩阵',
         'tab.landscape': '损失地形',
         'tab.eigenvalues': '特征值',
         'tab.equation': '方程',
+        'tab.ntk': 'NTK',
 
         'placeholder.hidden_sizes': '例如 128,64',
 
@@ -358,6 +378,10 @@ const I18N = {
         'plot.count': '数量',
         'plot.before': '原先',
         'plot.after': '当前',
+        'plot.ntk_matrix': 'NTK 矩阵',
+        'plot.ntk_sample': '样本 NTK (N×N)',
+        'plot.ntk_output': '输出 NTK (K×K)',
+        'plot.ntk_eigenvalues': 'NTK 特征值',
         "plot.center_point": '当前参数点',
 
         // Curvature matrices
@@ -388,6 +412,10 @@ const I18N = {
         'log.hessian_computed': 'Hessian 计算完成: 方法={method}, 显示={display_type}, 内存≈{memory_mb}MB',
         'log.eigenvalue_failed': '特征值计算失败: {message}',
         'log.hessian_error': 'Hessian 错误: {message}',
+        'log.computing_ntk': '正在计算 NTK (模式={mode}, 样本数={samples})...',
+        'log.ntk_computed': 'NTK 计算完成: 模式={mode}, 显示={display_type}, 内存≈{memory_mb}MB',
+        'log.ntk_error': 'NTK 错误: {message}',
+        'log.ntk_eigenvalue_failed': 'NTK 特征值计算失败: {message}',
         'log.computing_landscape': '正在计算 {mode} 景观...',
         'log.landscape_computed': '景观计算完成 ({mode})',
         'log.landscape_error': '景观错误: {message}',

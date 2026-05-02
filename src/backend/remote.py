@@ -65,7 +65,7 @@ class RemoteExecutor:
         self._sftp.mkdir(f"{self._remote_dir}/backend")
         for fname in ["__init__.py", "config.py", "protocol.py", "hessian.py",
                       "landscape.py", "equations.py", "training.py",
-                      "session.py", "model_sandbox.py"]:
+                      "session.py", "model_sandbox.py", "ntk.py"]:
             src = os.path.join(backend_dir, fname)
             if os.path.exists(src):
                 self._sftp.put(src, f"{self._remote_dir}/backend/{fname}")
@@ -147,6 +147,36 @@ class RemoteExecutor:
             "hessian": serialize_tensor(H),
             "is_diagonal": is_diag,
             "params": {"method": method},
+        }
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
+        return result["result"]
+
+    def compute_ntk(self, session, ntk_mode='sample', max_samples=32):
+        data = self._serialize_session(session)
+        data["type"] = "compute_ntk"
+        data["params"] = {
+            "ntk_mode": ntk_mode,
+            "max_samples": max_samples,
+            "output_size": session.output_size,
+        }
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
+        r = result["result"]
+        if r.get("model_state"):
+            session.model.load_state_dict(deserialize_tensor(r["model_state"], cfg.DEVICE))
+        return r["cached"]
+
+    def compute_ntk_eigenvalues(self, cached_ntk):
+        data = {
+            "type": "compute_ntk_eigenvalues",
+            "cached_ntk": {
+                "type": cached_ntk["type"],
+                "data": serialize_tensor(cached_ntk["data"]) if hasattr(cached_ntk["data"], "shape") else cached_ntk["data"],
+                "mode": cached_ntk["mode"],
+                "N": cached_ntk["N"],
+                "K": cached_ntk["K"],
+                "P": cached_ntk["P"],
+                "memory_mb": cached_ntk["memory_mb"],
+            },
         }
         result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
         return result["result"]
