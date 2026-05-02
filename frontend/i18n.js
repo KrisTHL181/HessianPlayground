@@ -34,6 +34,7 @@ const I18N = {
         'btn.pca_landscape': 'PCA Landscape',
         'btn.random_landscape': 'Random Landscape',
         'btn.interpolation': 'Interpolation',
+        'btn.lr_test': 'LR Test',
         'btn.newton_step': 'Newton Step',
         'btn.reset': 'Reset',
         'btn.diagonal_only': 'Diagonal Only',
@@ -200,6 +201,9 @@ const I18N = {
         'plot.param_index': 'Parameter Index',
         'plot.interpolation_curve': 'Loss curve',
         'plot.interpolation_title': 'Linear Mode Connectivity',
+        'plot.lr_test': 'LR Test',
+        'plot.lr_test_title': 'Learning Rate Range Test',
+        'plot.learning_rate': 'Learning Rate',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -258,6 +262,8 @@ const I18N = {
         'log.fisher_computed': 'Fisher computed: method={method}, mem≈{memory_mb}MB',
         'log.computing_interpolation': 'Computing loss interpolation...',
         'log.interpolation_done': 'Interpolation complete: barrier={barrier}',
+        'log.starting_lr_test': 'Starting LR range test...',
+        'log.lr_test_complete': 'LR range test complete: {steps} steps',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'header.theme_switch_light': 'Switch to light mode',
         'header.theme_switch_dark': 'Switch to dark mode',
@@ -291,6 +297,7 @@ const I18N = {
         'btn.pca_landscape': 'PCA 景观',
         'btn.random_landscape': '随机景观',
         'btn.interpolation': '插值',
+        'btn.lr_test': 'LR 测试',
         'btn.newton_step': '牛顿步',
         'btn.reset': '重置',
         'btn.diagonal_only': '仅对角',
@@ -449,6 +456,9 @@ const I18N = {
         'plot.param_index': '参数索引',
         'plot.interpolation_curve': '损失曲线',
         'plot.interpolation_title': '线性模式连通性',
+        'plot.lr_test': 'LR 测试',
+        'plot.lr_test_title': '学习率范围测试',
+        'plot.learning_rate': '学习率',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -507,6 +517,8 @@ const I18N = {
         'log.fisher_computed': 'Fisher 计算完成: 方法={method}, 内存≈{memory_mb}MB',
         'log.computing_interpolation': '正在计算损失插值...',
         'log.interpolation_done': '插值完成: 障碍={barrier}',
+        'log.starting_lr_test': '正在开始 LR 范围测试...',
+        'log.lr_test_complete': 'LR 范围测试完成: {steps} 步',
         'toast.gradient_ascent': '梯度上升模式',
         'header.theme_switch_light': '切换到浅色模式',
         'header.theme_switch_dark': '切换到深色模式',

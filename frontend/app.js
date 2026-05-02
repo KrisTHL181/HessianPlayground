@@ -1159,6 +1159,28 @@ class VisualizationPanel {
         if (prevDisplay === 'none') div.style.display = 'none';
     }
 
+    showLRTest(lrs, losses) {
+        const div = this._getDiv('loss');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+        const traces = [{
+            x: lrs, y: losses, mode: 'lines+markers', type: 'scatter',
+            name: t('plot.lr_test'), line: { color: C.plotLoss, width: 2 },
+        }];
+        const layout = {
+            paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 40, r: 40, t: 30, b: 40 },
+            title: t('plot.lr_test_title'),
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: t('plot.learning_rate'), color: C.textDim, type: 'log', gridcolor: C.plotGrid },
+            yaxis: { title: t('plot.loss'), color: C.textDim, gridcolor: C.plotGrid },
+        };
+        Plotly.react(div, traces, layout, { responsive: true });
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
+
     showInterpolation(data) {
         const div = this._getDiv('landscape');
         const prevDisplay = div.style.display;
@@ -1689,6 +1711,8 @@ class App {
         // Push messages
         this.ws.on('training_progress', (p) => this._onTrainingProgress(p));
         this.ws.on('training_complete', (p) => this._onTrainingComplete(p));
+        this.ws.on('lr_test_progress', (p) => this._onLRTestProgress(p));
+        this.ws.on('lr_test_complete', (p) => this._onLRTestComplete(p));
         this.ws.on('dataset_ready', (p) => {
             this.state.datasetReady = true;
             this.state._trainSamples = p.train_samples || 0;
@@ -1737,6 +1761,7 @@ class App {
         document.getElementById('btn-pca-landscape').onclick = () => this._computeLandscape('pca');
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
         document.getElementById('btn-interpolation').onclick = () => this._computeInterpolation();
+        document.getElementById('btn-lr-test').onclick = () => this._startLRTest();
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
@@ -1920,7 +1945,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-newton'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2313,6 +2338,31 @@ class App {
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }
+    }
+
+    async _startLRTest() {
+        if (!this.state.hasModel) { this.log.error(t('log.create_model_first')); return; }
+        try {
+            this._lrTestData = { lrs: [], losses: [] };
+            this.log.info(t('log.starting_lr_test'));
+            this.vis.switchTab('loss');
+            this.vis.showEmpty('loss', t('log.starting_lr_test'));
+            await this.ws.send('start_lr_test', { min_lr: 1e-6, max_lr: 1.0, steps: 50 });
+        } catch (e) { this.log.error(tf('log.error', { message: e.message })); }
+    }
+
+    _onLRTestProgress(p) {
+        if (!this._lrTestData) return;
+        this._lrTestData.lrs.push(p.lr);
+        this._lrTestData.losses.push(p.loss);
+        this.vis.showLRTest(this._lrTestData.lrs, this._lrTestData.losses);
+    }
+
+    _onLRTestComplete(p) {
+        this._lrTestData = { lrs: p.lrs, losses: p.losses };
+        this.vis.showLRTest(p.lrs, p.losses);
+        this.log.info(tf('log.lr_test_complete', { steps: p.steps_completed }));
+        this._setButtons(true);
     }
 
     async _computeLayerStats() {

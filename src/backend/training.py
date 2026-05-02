@@ -267,3 +267,90 @@ def _compute_grad_norm(model):
         if p.grad is not None:
             total_norm += p.grad.data.norm(2).item() ** 2
     return total_norm ** 0.5
+
+
+async def run_lr_range_test(session, payload, ws):
+    """Run an LR range test: exponentially increase LR and record loss."""
+    model = session.model
+    optimizer = session.optimizer
+    train_loader = session.train_loader
+    device = next(model.parameters()).device
+
+    if model is None or optimizer is None or train_loader is None:
+        raise ValueError("Model, optimizer, and dataset are required")
+
+    loss_fn = session.loss_fn
+    if loss_fn is None:
+        from backend.utils import make_loss_fn
+        loss_fn = make_loss_fn(session.task_type)
+
+    min_lr = payload.get("min_lr", 1e-6)
+    max_lr = payload.get("max_lr", 1.0)
+    steps = min(payload.get("steps", 50), 200)
+
+    lr_mult = (max_lr / min_lr) ** (1.0 / max(steps - 1, 1))
+
+    # Save original state
+    orig_params = [p.data.clone() for p in model.parameters()]
+    orig_lr = optimizer.param_groups[0]["lr"]
+
+    lrs = []
+    losses = []
+    current_lr = min_lr
+
+    model.train()
+    data_iter = iter(train_loader)
+    start_time = __import__('time').time()
+
+    for step in range(steps):
+        if session._stop_training_flag:
+            await ws.send_json(make_status("info", "LR range test stopped"))
+            break
+
+        try:
+            x, y = next(data_iter)
+        except StopIteration:
+            data_iter = iter(train_loader)
+            x, y = next(data_iter)
+
+        x, y = x.to(device), y.to(device)
+
+        for pg in optimizer.param_groups:
+            pg["lr"] = current_lr
+
+        optimizer.zero_grad()
+        output = model(x)
+        loss = loss_fn(output, y)
+        loss.backward()
+        optimizer.step()
+
+        lrs.append(current_lr)
+        losses.append(round(loss.item(), 6))
+
+        if step % 5 == 0 or step == steps - 1:
+            await ws.send_json(make_push("lr_test_progress", {
+                "step": step, "total_steps": steps,
+                "lr": current_lr, "loss": loss.item(),
+            }))
+
+        if torch.isnan(loss) or torch.isinf(loss):
+            break
+
+        current_lr *= lr_mult
+
+    # Restore
+    for p, orig in zip(model.parameters(), orig_params):
+        p.data.copy_(orig)
+    for pg in optimizer.param_groups:
+        pg["lr"] = orig_lr
+
+    elapsed = __import__('time').time() - start_time
+
+    await ws.send_json(make_push("lr_test_complete", {
+        "lrs": lrs,
+        "losses": losses,
+        "min_lr": min_lr,
+        "max_lr": max_lr,
+        "steps_completed": len(lrs),
+        "elapsed_seconds": elapsed,
+    }))

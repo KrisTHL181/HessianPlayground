@@ -89,6 +89,7 @@ ROUTER = {
     "compute_fisher": "_handle_compute_fisher",
     "compute_fisher_eigenvalues": "_handle_compute_fisher_eigenvalues",
     "compute_interpolation": "_handle_compute_interpolation",
+    "start_lr_test": "_handle_start_lr_test",
 }
 
 
@@ -153,6 +154,7 @@ def _get_response_type(request_type):
         "compute_fisher": "fisher_computed",
         "compute_fisher_eigenvalues": "fisher_eigenvalues",
         "compute_interpolation": "interpolation_computed",
+        "start_lr_test": "response",
     }
     return mapping.get(request_type, "response")
 
@@ -340,6 +342,20 @@ class _Dispatcher:
             "batch_size": batch_size,
             "task": task,
         }
+
+    @staticmethod
+    async def _handle_start_lr_test(session, payload, ws):
+        if session.model is None:
+            raise ValueError("Create a model first")
+        if session.optimizer is None:
+            raise ValueError("Configure an optimizer first")
+        if session.train_loader is None:
+            raise ValueError("Set a dataset first")
+
+        from backend.training import run_lr_range_test
+        session._stop_training_flag = False
+        session.training_task = asyncio.ensure_future(run_lr_range_test(session, payload, ws))
+        return {"status": "started"}
 
     @staticmethod
     async def _handle_start_training(session, payload, ws):

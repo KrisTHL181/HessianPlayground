@@ -31,6 +31,7 @@ VALID_REQUEST_TYPES = {
     "compute_fisher",
     "compute_fisher_eigenvalues",
     "compute_interpolation",
+    "start_lr_test",
 }
 
 RESPONSE_TYPES = {
@@ -56,10 +57,12 @@ RESPONSE_TYPES = {
     "fisher_computed",
     "fisher_eigenvalues",
     "interpolation_computed",
+    "lr_test_progress",
+    "lr_test_complete",
 }
 
 # Types that are push messages (not direct responses to requests)
-PUSH_TYPES = {"training_progress", "status"}
+PUSH_TYPES = {"training_progress", "status", "lr_test_progress", "lr_test_complete"}
 
 
 def make_response(msg_id, type_, payload):
