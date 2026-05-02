@@ -1657,6 +1657,7 @@ class App {
         this._pendingAdaptation = null;  // 'reset_full' | 'reset_first_last' | 'expand_matrices'
 
         this._setupListeners();
+        this._loadFromURL();
         this._initEmptyPlots();
         this._updateOptimizerParams();
     }
@@ -1762,6 +1763,7 @@ class App {
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
         document.getElementById('btn-interpolation').onclick = () => this._computeInterpolation();
         document.getElementById('btn-lr-test').onclick = () => this._startLRTest();
+        document.getElementById('btn-share').onclick = () => this._shareURL();
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
@@ -2452,6 +2454,52 @@ class App {
         } catch (e) {
             this.log.error(tf('log.model_adaptation_failed', { message: e.message }));
             this._pendingAdaptation = null;
+        }
+    }
+
+    _shareURL() {
+        const code = this.modelEditor.getCode();
+        const dataset = document.getElementById('dataset-select').value;
+        const config = {
+            input_size: document.getElementById('input-size').value,
+            output_size: document.getElementById('output-size').value,
+            hidden_layers: document.getElementById('hidden-sizes').value,
+            dataset: dataset,
+        };
+        const data = { code, config };
+        const hash = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+        const url = `${location.origin}${location.pathname}#${hash}`;
+        navigator.clipboard.writeText(url).then(() => {
+            this.log.info(t('log.url_copied'));
+        }).catch(() => {
+            // Fallback: show URL in a prompt
+            window.prompt(t('log.copy_url'), url);
+        });
+    }
+
+    _loadFromURL() {
+        if (!location.hash || location.hash.length < 2) return;
+        try {
+            const hash = location.hash.substring(1);
+            const json = decodeURIComponent(escape(atob(hash)));
+            const data = JSON.parse(json);
+            if (data.code) {
+                this.modelEditor.setCode(data.code);
+            }
+            if (data.config) {
+                setTimeout(() => {
+                    if (data.config.dataset) {
+                        document.getElementById('dataset-select').value = data.config.dataset;
+                        document.getElementById('dataset-select').dispatchEvent(new Event('change'));
+                    }
+                    if (data.config.input_size) document.getElementById('input-size').value = data.config.input_size;
+                    if (data.config.output_size) document.getElementById('output-size').value = data.config.output_size;
+                    if (data.config.hidden_layers) document.getElementById('hidden-sizes').value = data.config.hidden_layers;
+                }, 100);
+                this.log.info(t('log.url_loaded'));
+            }
+        } catch (e) {
+            // Invalid hash, ignore silently
         }
     }
 }
