@@ -7,6 +7,8 @@ const DATASET_DEFAULTS = {
     cifar100: { inputSize: 3072, outputSize: 100 },
     xor: { inputSize: 2, outputSize: 2 },
     polynomial: { inputSize: 1, outputSize: 1 },
+    fashion_mnist: { inputSize: 784, outputSize: 10 },
+    synthetic_regression: { inputSize: 10, outputSize: 1 },
 };
 
 // Optimizer-specific hyperparameter definitions

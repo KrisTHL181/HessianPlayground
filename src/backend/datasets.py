@@ -30,6 +30,10 @@ def load_dataset(name: str, params: dict) -> dict:
         return _generate_xor(batch_size, params)
     elif name == "polynomial":
         return _generate_polynomial(batch_size, params)
+    elif name == "fashion_mnist":
+        return _load_fashion_mnist(batch_size, params)
+    elif name == "synthetic_regression":
+        return _generate_synthetic_regression(batch_size, params)
     else:
         raise ValueError(f"Unknown dataset: {name}")
 
@@ -137,6 +141,31 @@ def _generate_xor(batch_size, params):
         torch.tensor(data, dtype=torch.float32),
         torch.tensor(labels, dtype=torch.long),
         batch_size, "XOR", [2], 2, "classification",
+    )
+
+
+def _load_fashion_mnist(batch_size, params):
+    transform_train = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.2860,), (0.3530,))])
+    transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.2860,), (0.3530,))])
+    return _load_torchvision_dataset(
+        torchvision.datasets.FashionMNIST, params, batch_size,
+        transform_train, transform_test, "Fashion-MNIST", [1, 28, 28], 10,
+    )
+
+
+def _generate_synthetic_regression(batch_size, params):
+    num_samples = params.get("num_samples", 1000)
+    noise = params.get("noise_level", 0.05)
+    input_dim = params.get("input_dim", 10)
+    seed = params.get("seed", 42)
+
+    rng = np.random.default_rng(seed)
+    x = rng.uniform(-1, 1, (num_samples, input_dim)).astype(np.float32)
+    y = np.sin(2 * np.pi * x.sum(axis=1)) + rng.normal(0, noise, num_samples).astype(np.float32)
+
+    return _split_tensor_dataset(
+        torch.tensor(x), torch.tensor(y).unsqueeze(1),
+        batch_size, "Synthetic Regression", [input_dim], 1, "regression",
     )
 
 
