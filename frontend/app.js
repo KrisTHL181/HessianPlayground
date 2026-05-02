@@ -1786,6 +1786,7 @@ class App {
         document.getElementById('btn-interpolation').onclick = () => this._computeInterpolation();
         document.getElementById('btn-lr-test').onclick = () => this._startLRTest();
         document.getElementById('btn-noise-scale').onclick = () => this._computeNoiseScale();
+        document.getElementById('btn-sharpness').onclick = () => this._computeSharpness();
         document.getElementById('btn-share').onclick = () => this._shareURL();
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
@@ -1970,7 +1971,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-sharpness', 'btn-newton'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2365,6 +2366,17 @@ class App {
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }
+    }
+
+    async _computeSharpness() {
+        if (!this.state.hasModel) { this.log.error(t('log.create_model_first')); return; }
+        try {
+            this.log.info(t('log.computing_sharpness'));
+            const result = await this.ws.send('compute_sharpness_landscape', { grid_resolution: 30 }, 600000);
+            this.vis.switchTab('landscape');
+            this.vis.showLandscape(result);
+            this.log.info(tf('log.sharpness_done', { ev1: result.eigenvalue_1?.toFixed(4), ev2: result.eigenvalue_2?.toFixed(4) }));
+        } catch (e) { this.log.error(tf('log.error', { message: e.message })); }
     }
 
     async _computeNoiseScale() {

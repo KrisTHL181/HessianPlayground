@@ -33,6 +33,7 @@ VALID_REQUEST_TYPES = {
     "compute_interpolation",
     "start_lr_test",
     "compute_gradient_noise_scale",
+    "compute_sharpness_landscape",
 }
 
 RESPONSE_TYPES = {

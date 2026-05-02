@@ -91,6 +91,7 @@ ROUTER = {
     "compute_interpolation": "_handle_compute_interpolation",
     "start_lr_test": "_handle_start_lr_test",
     "compute_gradient_noise_scale": "_handle_compute_gradient_noise_scale",
+    "compute_sharpness_landscape": "_handle_compute_sharpness_landscape",
 }
 
 
@@ -157,6 +158,7 @@ def _get_response_type(request_type):
         "compute_interpolation": "interpolation_computed",
         "start_lr_test": "response",
         "compute_gradient_noise_scale": "gradient_noise_scale",
+        "compute_sharpness_landscape": "landscape_computed",
     }
     return mapping.get(request_type, "response")
 
@@ -344,6 +346,14 @@ class _Dispatcher:
             "batch_size": batch_size,
             "task": task,
         }
+
+    @staticmethod
+    async def _handle_compute_sharpness_landscape(session, payload, ws):
+        _ensure_loss_fn(session)
+        resolution = min(payload.get("grid_resolution", 30), 50)
+        range_factor = payload.get("range_factor", 2.0)
+        from backend.landscape import compute_sharpness_landscape
+        return await compute_sharpness_landscape(session, resolution, range_factor, ws)
 
     @staticmethod
     async def _handle_compute_gradient_noise_scale(session, payload, ws):

@@ -311,3 +311,81 @@ async def compute_interpolation(session, num_steps=20, snapshot_a=-1, snapshot_b
         "barrier": round(barrier, 6),
         "num_steps": num_steps,
     }
+
+
+async def compute_sharpness_landscape(session, resolution=30, range_factor=2.0, ws=None):
+    """Sample loss landscape along top Hessian eigenvectors."""
+    model = session.model
+    if model is None:
+        raise ValueError("Create a model first")
+
+    loss_fn = session.loss_fn
+    if loss_fn is None:
+        from backend.utils import make_loss_fn
+        loss_fn = make_loss_fn(session.task_type)
+    if session.train_loader is None:
+        raise ValueError("Set a dataset first")
+
+    cached = session._cached_hessian
+    if cached is None:
+        raise ValueError("Compute Hessian first")
+
+    x_batch, y_batch = next(iter(session.train_loader))
+    device = next(model.parameters()).device
+    x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+
+    n = session.param_count
+    center = session.get_flattened_params().to(device)
+
+    # Get top 2 directions
+    if cached["type"] == "full" and n <= 5000:
+        # Use exact eigenvectors from full Hessian
+        H = cached["data"].to(device)
+        evals, evecs = torch.linalg.eigh(H)
+        d1 = evecs[:, -1].float()  # top eigenvalue eigenvector
+        d2 = evecs[:, -2].float() if evecs.shape[1] >= 2 else torch.randn_like(d1)
+        if evecs.shape[1] >= 2:
+            d2 = d2 - d2.dot(d1) * d1  # Gram-Schmidt
+            d2 = d2 / d2.norm()
+        else:
+            d2 = torch.randn_like(d1)
+            d2 = d2 - d2.dot(d1) * d1
+            d2 = d2 / (d2.norm() + 1e-8)
+        ev1, ev2 = float(evals[-1].item()), float(evals[-2].item()) if evecs.shape[1] >= 2 else 0.0
+    elif cached["type"] == "diagonal":
+        # Top two diagonal entries
+        diag = cached["data"].to(device).float()
+        _, top_indices = torch.topk(diag.flatten(), min(2, diag.numel()))
+        d1 = torch.zeros(n, device=device)
+        d1[top_indices[0]] = 1.0
+        d2 = torch.zeros(n, device=device)
+        if top_indices.numel() >= 2:
+            d2[top_indices[1]] = 1.0
+        else:
+            d2 = torch.randn_like(d1)
+            d2 = d2 - d2.dot(d1) * d1
+            d2 = d2 / (d2.norm() + 1e-8)
+        ev1, ev2 = float(diag[top_indices[0]].item()), float(diag[top_indices[1]].item()) if top_indices.numel() >= 2 else 0.0
+    else:
+        raise ValueError(f"Sharpness landscape requires full or diagonal Hessian, got {cached['type']}")
+
+    if ws:
+        await ws.send_json(make_status("info", "Sampling sharpness landscape..."))
+
+    grid_range = range_factor * max(d1.norm().item(), d2.norm().item(), 0.1)
+    grid_x, grid_y, loss_grid = await _sample_loss_grid(
+        session, model, center, d1, d2, resolution, grid_range, ws
+    )
+
+    return {
+        "mode": "sharpness",
+        "grid_x": grid_x,
+        "grid_y": grid_y,
+        "loss_grid": loss_grid,
+        "center_loss": float(loss_fn(model(x_batch), y_batch).cpu().item()),
+        "center_x": 0.0,
+        "center_y": 0.0,
+        "grid_resolution": resolution,
+        "eigenvalue_1": round(ev1, 6),
+        "eigenvalue_2": round(ev2, 6),
+    }
