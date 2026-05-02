@@ -121,6 +121,7 @@ async def run_training(session, payload, ws):
     epochs = payload.get("epochs", cfg.DEFAULT_EPOCHS)
     record_params_every = payload.get("record_params_every", cfg.DEFAULT_RECORD_PARAMS_EVERY)
     record_loss_every = payload.get("record_loss_every", cfg.DEFAULT_RECORD_LOSS_EVERY)
+    clip_norm = payload.get("clip_norm", 0)  # 0 = no clipping
 
     model = session.model
     optimizer = session.optimizer
@@ -166,6 +167,12 @@ async def run_training(session, payload, ws):
                     (-loss).backward()
                 else:
                     loss.backward()
+
+                pre_clip_norm = _compute_grad_norm(model) if clip_norm > 0 else None
+                if clip_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), clip_norm)
+                post_clip_norm = _compute_grad_norm(model) if clip_norm > 0 else None
+
                 optimizer.step()
 
                 batch_global += 1
@@ -186,7 +193,8 @@ async def run_training(session, payload, ws):
                         session.accuracy_history.append(train_acc)
 
                     elapsed = time.time() - start_time
-                    await ws.send_json(make_push("training_progress", {
+                    grad_norm = _compute_grad_norm(model)
+                    progress_payload = {
                         "epoch": epoch,
                         "total_epochs": epochs,
                         "batch": batch_idx + 1,
@@ -194,8 +202,12 @@ async def run_training(session, payload, ws):
                         "loss": avg_loss,
                         "train_accuracy": train_acc,
                         "elapsed_seconds": elapsed,
-                        "gradient_norm": _compute_grad_norm(model),
-                    }))
+                        "gradient_norm": grad_norm,
+                    }
+                    if pre_clip_norm is not None:
+                        progress_payload["pre_clip_norm"] = round(pre_clip_norm, 6)
+                        progress_payload["post_clip_norm"] = round(post_clip_norm, 6)
+                    await ws.send_json(make_push("training_progress", progress_payload))
 
                     total_samples = 0
                     correct_samples = 0

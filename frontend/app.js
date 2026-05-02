@@ -2017,10 +2017,12 @@ class App {
             this.state.lossHistory = [];
             this.state.accHistory = [];
             this.log.info(tf('log.starting_training', { epochs, snapshot_interval: snapshotInterval }));
+            const clipNorm = parseFloat(document.getElementById('clip-norm-input').value) || 0;
             const result = await this.ws.send('start_training', {
                 epochs,
                 record_params_every: snapshotInterval,
                 record_loss_every: 1,
+                clip_norm: clipNorm,
             });
             if (result.status === 'started') {
                 this.state.training = true;
