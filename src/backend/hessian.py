@@ -33,7 +33,7 @@ def compute_full_hessian_kernel(model, x, y, loss_fn, param_count):
     grads = torch.autograd.grad(loss, model.parameters(), create_graph=True)
     flat_grads = torch.cat([g.view(-1) for g in grads])
 
-    H = torch.zeros(param_count, param_count)
+    H = torch.zeros(param_count, param_count, device=flat_grads.device)
     for i in range(param_count):
         row_grads = torch.autograd.grad(
             flat_grads[i], model.parameters(), retain_graph=(i < param_count - 1)
@@ -59,10 +59,10 @@ def compute_diagonal_hessian_kernel(model, x, y, loss_fn, param_count, num_hutch
     grads = torch.autograd.grad(loss, model.parameters(), create_graph=True)
     flat_grads = torch.cat([g.view(-1).float() for g in grads])
 
-    diag = torch.zeros(param_count)
+    diag = torch.zeros(param_count, device=flat_grads.device)
 
     for k in range(num_hutchinson_samples):
-        v = torch.randint(0, 2, (param_count,)).float() * 2 - 1
+        v = (torch.randint(0, 2, (param_count,)).float() * 2 - 1).to(flat_grads.device)
         g_dot_v = (flat_grads * v).sum()
         hv_list = torch.autograd.grad(g_dot_v, model.parameters(), retain_graph=(k < num_hutchinson_samples - 1))
         flat_hv = torch.cat([h.view(-1).float() for h in hv_list])

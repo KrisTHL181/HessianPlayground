@@ -22,6 +22,7 @@ class WebSocketManager {
         this.listeners = new Map(); // type -> Set<callback>
         this.msgCounter = 0;
         this.onStatusChange = null;
+        this.onReconnect = null;
         this._computeDevice = null; // "local_cpu" | "local_cuda" | "remote_cpu" | "remote_cuda"
         this._connect();
     }
@@ -30,8 +31,12 @@ class WebSocketManager {
         this._setStatus('connecting');
         this.ws = new WebSocket(this.url);
         this.ws.onopen = () => {
+            const wasReconnect = this.reconnectAttempts > 0;
             this._setStatus('connected');
             this.reconnectAttempts = 0;
+            if (wasReconnect && this.onReconnect) {
+                this.onReconnect();
+            }
         };
         this.ws.onmessage = (e) => this._onMessage(e.data);
         this.ws.onclose = (e) => {
@@ -763,6 +768,21 @@ class App {
             document.getElementById('status-dot').className = 'status-dot ' + status;
             if (status === 'connected') this._refreshDeviceLabel();
         };
+        this.ws.onReconnect = () => {
+            this.state.hasModel = false;
+            this.state.paramCount = 0;
+            this.state.datasetReady = false;
+            this.state.hasOptimizer = false;
+            this.state.training = false;
+            this._setButtons(false);
+            document.getElementById('btn-train').disabled = true;
+            document.getElementById('btn-stop').disabled = true;
+            this.log.warn('Connection restored — backend session was reset. Please recreate model and dataset.');
+            for (const tab of this.vis.tabs) {
+                if (tab === 'loss') continue;
+                this.vis.showEmpty(tab);
+            }
+        };
 
         // Push messages
         this.ws.on('training_progress', (p) => this._onTrainingProgress(p));
@@ -1052,10 +1072,10 @@ class App {
             this.log.error('Create a model first');
             return;
         }
-        const useDiag = forceDiag !== null ? forceDiag : (this.state.paramCount > 10000);
-        if (this.state.paramCount > 10000 && forceDiag === null) {
+        const useDiag = forceDiag !== null ? forceDiag : true;
+        if (this.state.paramCount > 500 && forceDiag === null) {
             document.getElementById('hessian-modal-text').textContent =
-                `Model has ${this.state.paramCount} parameters. Full Hessian needs ~${(this.state.paramCount * this.state.paramCount * 8 / 1024 / 1024).toFixed(0)} MB. Use diagonal instead?`;
+                `Model has ${this.state.paramCount} parameters. Full Hessian needs ~${(this.state.paramCount * this.state.paramCount * 8 / 1024 / 1024).toFixed(0)} MB and may be slow. Diagonal approximation (fast) is recommended.`;
             // Keep data-i18n as fallback; dynamic text overrides it
             document.getElementById('hessian-modal').classList.add('show');
             return;
@@ -1070,14 +1090,18 @@ class App {
             this.vis.showHessianHeatmap(result.hessian_matrix, result.dim_labels || [], result.is_diagonal);
 
             // Auto-compute eigenvalues
-            const evResult = await this.ws.send('compute_hessian_eigenvalues', { method: result.is_diagonal ? 'diagonal' : 'exact' });
-            this.vis.showEigenvalues(evResult.eigenvalues, evResult.histogram_bins, evResult.histogram_counts, {
-                min: evResult.min_eigenvalue,
-                max: evResult.max_eigenvalue,
-                condition: evResult.condition_number,
-                num_positive: evResult.num_positive,
-                num_negative: evResult.num_negative,
-            });
+            try {
+                const evResult = await this.ws.send('compute_hessian_eigenvalues', { method: result.is_diagonal ? 'diagonal' : 'exact' });
+                this.vis.showEigenvalues(evResult.eigenvalues, evResult.histogram_bins, evResult.histogram_counts, {
+                    min: evResult.min_eigenvalue,
+                    max: evResult.max_eigenvalue,
+                    condition: evResult.condition_number,
+                    num_positive: evResult.num_positive,
+                    num_negative: evResult.num_negative,
+                });
+            } catch (evErr) {
+                this.log.warn(`Eigenvalue computation failed: ${evErr.message}`);
+            }
             this.log.info(`Hessian computed: shape=${result.hessian_shape}, diagonal=${result.is_diagonal}`);
         } catch (e) {
             this.log.error(`Hessian error: ${e.message}`);
