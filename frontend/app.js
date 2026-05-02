@@ -326,7 +326,7 @@ class CodeEditor {
 // ============================================================
 class VisualizationPanel {
     constructor() {
-        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk', 'weights'];
+        this.tabs = ['loss', 'hessian', 'landscape', 'eigenvalues', 'equation', 'ntk', 'weights', 'gradient'];
         this.currentTab = 'loss';
         this._plotIds = {
             loss: 'plot-loss',
@@ -336,6 +336,7 @@ class VisualizationPanel {
             equation: 'plot-equation',
             ntk: 'plot-ntk',
             weights: 'plot-weights',
+            gradient: 'plot-gradient',
         };
     }
 
@@ -1050,6 +1051,58 @@ class VisualizationPanel {
 
         if (prevDisplay === 'none') div.style.display = 'none';
     }
+
+    showGradientStats(data) {
+        const div = this._getDiv('gradient');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+
+        const layers = data.layer_names || [];
+        const layerStats = data.layer_stats || {};
+        if (!layers.length) {
+            Plotly.purge(div);
+            div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">${t('plot.no_data')}</div>`;
+            if (prevDisplay === 'none') div.style.display = 'none';
+            return;
+        }
+
+        const meanNorms = layers.map(n => (layerStats[n] || {}).mean_norm || 0);
+        const stdNorms = layers.map(n => (layerStats[n] || {}).std_norm || 0);
+
+        const traces = [{
+            x: layers.map(n => n.length > 20 ? n.substring(0, 20) + '...' : n),
+            y: meanNorms,
+            type: 'bar',
+            name: t('plot.grad_mean_norm'),
+            marker: { color: C.plotLoss },
+            error_y: { type: 'data', array: stdNorms, visible: true },
+        }];
+
+        const annotations = [];
+        if (data.mean_cosine_similarity !== null && data.mean_cosine_similarity !== undefined) {
+            annotations.push({
+                x: 0.5, y: 1.12, xref: 'paper', yref: 'paper',
+                text: `${t('plot.grad_cosine_sim')}: ${data.mean_cosine_similarity.toFixed(4)} | SNR: ${(data.gradient_snr || 0).toFixed(4)}`,
+                showarrow: false, font: { size: 11, color: C.textDim },
+            });
+        }
+
+        const layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 40, r: 40, t: 30, b: 80 },
+            title: t('tab.gradient'),
+            titlefont: { size: 12, color: C.plotFont },
+            xaxis: { title: t('plot.layer'), color: C.textDim, tickangle: -45, automargin: true },
+            yaxis: { title: t('plot.grad_norm'), color: C.textDim, gridcolor: C.plotGrid },
+            annotations: annotations,
+        };
+
+        Plotly.react(div, traces, layout, { responsive: true });
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
 }
 
 // ============================================================
@@ -1508,6 +1561,7 @@ class App {
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
+        document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
         document.getElementById('btn-reset').onclick = () => this._reset();
 
         // Tab switching
@@ -1691,6 +1745,7 @@ class App {
             document.getElementById(id).disabled = !enabled;
         });
         document.getElementById('btn-weight-hist').disabled = !enabled || this.state.snapshots < 2;
+        document.getElementById('btn-gradient').disabled = !enabled;
         document.getElementById('btn-train').disabled = !this.state.hasModel || this.state.training;
         document.getElementById('btn-stop').disabled = !this.state.training;
     }
@@ -2005,6 +2060,26 @@ class App {
             this.vis.switchTab('weights');
             this.vis.showWeightHistogram(result);
             this.log.info(tf('log.weight_histogram_done', { layers: result.layers?.length || 0, snapshots: result.num_snapshots || 0 }));
+        } catch (e) {
+            this.log.error(tf('log.error', { message: e.message }));
+        }
+    }
+
+    async _computeGradientStats() {
+        if (!this.state.hasModel) {
+            this.log.error(t('log.create_model_first'));
+            return;
+        }
+        try {
+            this.log.info(t('log.computing_gradient_stats'));
+            const result = await this.ws.send('compute_gradient_stats', { num_batches: 4 });
+            this.vis.switchTab('gradient');
+            this.vis.showGradientStats(result);
+            this.log.info(tf('log.gradient_stats_done', {
+                layers: result.layer_names?.length || 0,
+                cosine_sim: result.mean_cosine_similarity?.toFixed(4) || 'N/A',
+                snr: (result.gradient_snr || 0).toFixed(4),
+            }));
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }

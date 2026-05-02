@@ -43,6 +43,7 @@ const I18N = {
         'btn.connect': 'Connect',
         'btn.disconnect': 'Disconnect',
         'btn.weight_histogram': 'Weight Hist',
+        'btn.gradient_stats': 'Grad Stats',
         'btn.play': 'Play',
         'btn.pause': 'Pause',
 
@@ -91,6 +92,7 @@ const I18N = {
         'tab.equation': 'Equation',
         'tab.ntk': 'NTK',
         'tab.weights': 'Weights',
+        'tab.gradient': 'Gradient',
 
         // Placeholders
         'placeholder.hidden_sizes': 'e.g. 128,64',
@@ -179,6 +181,10 @@ const I18N = {
         "plot.center_point": 'Current Point',
         'plot.weight_value': 'Weight Value',
         'plot.snapshot': 'Snapshot',
+        'plot.grad_mean_norm': 'Mean Gradient Norm',
+        'plot.grad_cosine_sim': 'Cosine Similarity',
+        'plot.grad_norm': 'Gradient Norm',
+        'plot.layer': 'Layer',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -228,6 +234,8 @@ const I18N = {
         'log.no_snapshots': 'No snapshots available. Run training first.',
         'log.computing_weight_histogram': 'Computing weight histograms...',
         'log.weight_histogram_done': 'Weight histograms computed: {layers} layers, {snapshots} snapshots',
+        'log.computing_gradient_stats': 'Computing gradient statistics...',
+        'log.gradient_stats_done': 'Gradient stats: {layers} layers, cos_sim={cosine_sim}, SNR={snr}',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'header.theme_switch_light': 'Switch to light mode',
         'header.theme_switch_dark': 'Switch to dark mode',
@@ -270,6 +278,7 @@ const I18N = {
         'btn.connect': '连接',
         'btn.disconnect': '断开',
         'btn.weight_histogram': '权重直方图',
+        'btn.gradient_stats': '梯度统计',
         'btn.play': '播放',
         'btn.pause': '暂停',
 
@@ -315,6 +324,7 @@ const I18N = {
         'tab.equation': '方程',
         'tab.ntk': 'NTK',
         'tab.weights': '权重分布',
+        'tab.gradient': '梯度',
 
         'placeholder.hidden_sizes': '例如 128,64',
 
@@ -398,6 +408,10 @@ const I18N = {
         "plot.center_point": '当前参数点',
         'plot.weight_value': '权重值',
         'plot.snapshot': '快照',
+        'plot.grad_mean_norm': '平均梯度范数',
+        'plot.grad_cosine_sim': '余弦相似度',
+        'plot.grad_norm': '梯度范数',
+        'plot.layer': '层',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -447,6 +461,8 @@ const I18N = {
         'log.no_snapshots': '无可用快照，请先运行训练。',
         'log.computing_weight_histogram': '正在计算权重直方图...',
         'log.weight_histogram_done': '权重直方图已计算: {layers} 层, {snapshots} 个快照',
+        'log.computing_gradient_stats': '正在计算梯度统计...',
+        'log.gradient_stats_done': '梯度统计: {layers} 层, 余弦相似度={cosine_sim}, SNR={snr}',
         'toast.gradient_ascent': '梯度上升模式',
         'header.theme_switch_light': '切换到浅色模式',
         'header.theme_switch_dark': '切换到深色模式',
