@@ -32,6 +32,7 @@ VALID_REQUEST_TYPES = {
     "compute_fisher_eigenvalues",
     "compute_interpolation",
     "start_lr_test",
+    "compute_gradient_noise_scale",
 }
 
 RESPONSE_TYPES = {
@@ -59,6 +60,7 @@ RESPONSE_TYPES = {
     "interpolation_computed",
     "lr_test_progress",
     "lr_test_complete",
+    "gradient_noise_scale",
 }
 
 # Types that are push messages (not direct responses to requests)

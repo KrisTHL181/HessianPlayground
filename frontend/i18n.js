@@ -35,6 +35,7 @@ const I18N = {
         'btn.random_landscape': 'Random Landscape',
         'btn.interpolation': 'Interpolation',
         'btn.lr_test': 'LR Test',
+        'btn.noise_scale': 'Noise Scale',
         'btn.newton_step': 'Newton Step',
         'btn.reset': 'Reset',
         'btn.share': 'Share URL',
@@ -206,6 +207,9 @@ const I18N = {
         'plot.lr_test': 'LR Test',
         'plot.lr_test_title': 'Learning Rate Range Test',
         'plot.learning_rate': 'Learning Rate',
+        'plot.noise_scale': 'Noise Scale',
+        'plot.noise_scale_title': 'Gradient Noise Scale (McCandlish et al. 2018)',
+        'plot.batch_size_axis': 'Batch Size',
 
         // Curvature matrices
         'curvature_matrices.min': 'Min Value',
@@ -266,6 +270,8 @@ const I18N = {
         'log.interpolation_done': 'Interpolation complete: barrier={barrier}',
         'log.starting_lr_test': 'Starting LR range test...',
         'log.lr_test_complete': 'LR range test complete: {steps} steps',
+        'log.computing_noise_scale': 'Computing gradient noise scale...',
+        'log.noise_scale_done': 'Gradient noise scale computed',
         'toast.gradient_ascent': 'Gradient ascent mode',
         'log.url_copied': 'URL copied to clipboard',
         'log.url_loaded': 'Configuration loaded from URL',
@@ -303,6 +309,7 @@ const I18N = {
         'btn.random_landscape': '随机景观',
         'btn.interpolation': '插值',
         'btn.lr_test': 'LR 测试',
+        'btn.noise_scale': '噪声规模',
         'btn.newton_step': '牛顿步',
         'btn.reset': '重置',
         'btn.share': '分享链接',
@@ -466,6 +473,9 @@ const I18N = {
         'plot.lr_test': 'LR 测试',
         'plot.lr_test_title': '学习率范围测试',
         'plot.learning_rate': '学习率',
+        'plot.noise_scale': '噪声规模',
+        'plot.noise_scale_title': '梯度噪声规模 (McCandlish et al. 2018)',
+        'plot.batch_size_axis': '批次大小',
 
         // Curvature matrices
         'curvature_matrices.min': '最小值',
@@ -526,6 +536,8 @@ const I18N = {
         'log.interpolation_done': '插值完成: 障碍={barrier}',
         'log.starting_lr_test': '正在开始 LR 范围测试...',
         'log.lr_test_complete': 'LR 范围测试完成: {steps} 步',
+        'log.computing_noise_scale': '正在计算梯度噪声规模...',
+        'log.noise_scale_done': '梯度噪声规模已计算',
         'toast.gradient_ascent': '梯度上升模式',
         'log.url_copied': '链接已复制到剪贴板',
         'log.url_loaded': '已从链接加载配置',

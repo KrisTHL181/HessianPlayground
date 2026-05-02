@@ -90,6 +90,7 @@ ROUTER = {
     "compute_fisher_eigenvalues": "_handle_compute_fisher_eigenvalues",
     "compute_interpolation": "_handle_compute_interpolation",
     "start_lr_test": "_handle_start_lr_test",
+    "compute_gradient_noise_scale": "_handle_compute_gradient_noise_scale",
 }
 
 
@@ -155,6 +156,7 @@ def _get_response_type(request_type):
         "compute_fisher_eigenvalues": "fisher_eigenvalues",
         "compute_interpolation": "interpolation_computed",
         "start_lr_test": "response",
+        "compute_gradient_noise_scale": "gradient_noise_scale",
     }
     return mapping.get(request_type, "response")
 
@@ -342,6 +344,16 @@ class _Dispatcher:
             "batch_size": batch_size,
             "task": task,
         }
+
+    @staticmethod
+    async def _handle_compute_gradient_noise_scale(session, payload, ws):
+        if session.model is None or session.train_loader is None:
+            raise ValueError("Model and dataset required")
+        _ensure_loss_fn(session)
+        from backend.training import compute_gradient_noise_scale
+        batch_sizes = payload.get("batch_sizes", [16, 32, 64, 128, 256])
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, compute_gradient_noise_scale, session, batch_sizes)
 
     @staticmethod
     async def _handle_start_lr_test(session, payload, ws):

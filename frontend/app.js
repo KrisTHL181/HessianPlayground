@@ -1159,6 +1159,28 @@ class VisualizationPanel {
         if (prevDisplay === 'none') div.style.display = 'none';
     }
 
+    showNoiseScale(data) {
+        const div = this._getDiv('loss');
+        const prevDisplay = div.style.display;
+        if (prevDisplay === 'none') div.style.display = 'block';
+        const C = getThemeColors();
+        const traces = [{
+            x: data.batch_sizes, y: data.noise_scales,
+            mode: 'lines+markers', type: 'scatter',
+            name: t('plot.noise_scale'), line: { color: C.plotLoss, width: 2 },
+        }];
+        const layout = {
+            paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+            font: { color: C.plotFont, size: 11 },
+            margin: { l: 40, r: 40, t: 30, b: 40 },
+            title: t('plot.noise_scale_title'),
+            xaxis: { title: t('plot.batch_size_axis'), color: C.textDim, gridcolor: C.plotGrid },
+            yaxis: { title: t('plot.noise_scale'), color: C.textDim, gridcolor: C.plotGrid },
+        };
+        Plotly.react(div, traces, layout, { responsive: true });
+        if (prevDisplay === 'none') div.style.display = 'none';
+    }
+
     showLRTest(lrs, losses) {
         const div = this._getDiv('loss');
         const prevDisplay = div.style.display;
@@ -1763,6 +1785,7 @@ class App {
         document.getElementById('btn-random-landscape').onclick = () => this._computeLandscape('random');
         document.getElementById('btn-interpolation').onclick = () => this._computeInterpolation();
         document.getElementById('btn-lr-test').onclick = () => this._startLRTest();
+        document.getElementById('btn-noise-scale').onclick = () => this._computeNoiseScale();
         document.getElementById('btn-share').onclick = () => this._shareURL();
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
@@ -1947,7 +1970,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-newton'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2342,6 +2365,17 @@ class App {
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }
+    }
+
+    async _computeNoiseScale() {
+        if (!this.state.hasModel) { this.log.error(t('log.create_model_first')); return; }
+        try {
+            this.log.info(t('log.computing_noise_scale'));
+            const result = await this.ws.send('compute_gradient_noise_scale', { batch_sizes: [16, 32, 64, 128, 256] }, 120000);
+            this.vis.switchTab('loss');
+            this.vis.showNoiseScale(result);
+            this.log.info(t('log.noise_scale_done'));
+        } catch (e) { this.log.error(tf('log.error', { message: e.message })); }
     }
 
     async _startLRTest() {

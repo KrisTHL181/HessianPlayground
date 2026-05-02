@@ -366,3 +366,64 @@ async def run_lr_range_test(session, payload, ws):
         "steps_completed": len(lrs),
         "elapsed_seconds": elapsed,
     }))
+
+
+def compute_gradient_noise_scale(session, batch_sizes=None):
+    """Compute gradient noise scale tr(Cov(g)) / |E[g]|^2 across batch sizes.
+
+    Uses the McCandlish et al. (2018) estimator.
+    """
+    model = session.model
+    if model is None or session.train_loader is None or session.loss_fn is None:
+        raise ValueError("Model, dataset, and loss function required")
+
+    device = next(model.parameters()).device
+    loss_fn = session.loss_fn
+
+    if batch_sizes is None:
+        batch_sizes = [16, 32, 64, 128, 256]
+
+    results = []
+    data_iter = iter(session.train_loader)
+
+    for bs in batch_sizes:
+        try:
+            x, y = next(data_iter)
+        except StopIteration:
+            data_iter = iter(session.train_loader)
+            x, y = next(data_iter)
+
+        actual_bs = min(bs, x.size(0))
+        x, y = x[:actual_bs].to(device), y[:actual_bs].to(device)
+
+        # Compute individual gradients for each sample
+        grads = []
+        for i in range(actual_bs):
+            model.zero_grad()
+            xi, yi = x[i:i + 1], y[i:i + 1]
+            output = model(xi)
+            loss = loss_fn(output, yi)
+            g_list = torch.autograd.grad(loss, model.parameters(), create_graph=False, retain_graph=False)
+            g = torch.cat([gr.detach().view(-1).float() for gr in g_list])
+            grads.append(g)
+
+        model.zero_grad()
+        stacked = torch.stack(grads)  # [B, P]
+        mean_g = stacked.mean(dim=0)
+        cov_trace = ((stacked - mean_g) ** 2).sum(dim=1).mean().item()
+        mean_norm_sq = mean_g.norm(2).item() ** 2
+
+        noise_scale = cov_trace / max(mean_norm_sq, 1e-8) if mean_norm_sq > 1e-8 else float('inf')
+
+        results.append({
+            "batch_size": actual_bs,
+            "noise_scale": round(noise_scale, 6),
+            "cov_trace": round(cov_trace, 6),
+            "mean_norm_sq": round(mean_norm_sq, 6),
+        })
+
+    return {
+        "results": results,
+        "batch_sizes": [r["batch_size"] for r in results],
+        "noise_scales": [r["noise_scale"] for r in results],
+    }
