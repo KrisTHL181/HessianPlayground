@@ -6,20 +6,19 @@ import traceback
 
 import torch
 import torch.nn as nn
-from aiohttp import web, WSMsgType
+from aiohttp import WSMsgType, web
 
 import backend.config as cfg
 from backend.protocol import (
     VALID_REQUEST_TYPES,
-    PUSH_TYPES,
+    make_error,
     make_push,
     make_response,
-    make_error,
     make_status,
     validate_message,
 )
 from backend.session import Session
-
+from backend.utils import make_loss_fn
 
 active_sessions: dict[web.WebSocketResponse, Session] = {}
 _remote_executor = None  # singleton RemoteExecutor, created on first connect_remote request
@@ -146,7 +145,7 @@ def _replace_module(model, name, new_module):
 
 def _ensure_loss_fn(session):
     if session.loss_fn is None:
-        session.loss_fn = nn.CrossEntropyLoss() if session.task_type == "classification" else nn.MSELoss()
+        session.loss_fn = make_loss_fn(session.task_type)
 
 
 class _Dispatcher:
@@ -358,7 +357,7 @@ class _Dispatcher:
             raise ValueError("Create a model first")
         _ensure_loss_fn(session)
 
-        from backend.hessian import compute_full_hessian, compute_diagonal_hessian, hessian_to_display_matrix
+        from backend.hessian import compute_diagonal_hessian, compute_full_hessian, hessian_to_display_matrix
 
         use_diag = payload.get("use_diagonal_approx", False)
         sample_batches = payload.get("sample_batches", 1)

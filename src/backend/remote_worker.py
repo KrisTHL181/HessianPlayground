@@ -7,7 +7,6 @@ the shared backend.* kernel functions.
 """
 
 import argparse
-import io
 import os
 import pickle
 import sys
@@ -32,21 +31,7 @@ from backend.landscape import (
     sample_loss_grid_sync,
 )
 from backend.training import run_training_sync
-
-# ---------------------------------------------------------------------------
-# Serialization helpers
-# ---------------------------------------------------------------------------
-
-
-def _deserialize_tensor(data: bytes) -> torch.Tensor:
-    return torch.load(io.BytesIO(data), weights_only=False)
-
-
-def _serialize_tensor(t: torch.Tensor) -> bytes:
-    buf = io.BytesIO()
-    torch.save(t, buf)
-    return buf.getvalue()
-
+from backend.utils import deserialize_tensor, make_loss_fn, serialize_tensor
 
 # ---------------------------------------------------------------------------
 # Model reconstruction
@@ -54,39 +39,18 @@ def _serialize_tensor(t: torch.Tensor) -> bytes:
 
 
 def _make_model(req: dict) -> nn.Module:
-    code = req.get("model_code", "")
-    input_size = req.get("input_size", cfg.DEFAULT_INPUT_SIZE)
-    output_size = req.get("output_size", cfg.DEFAULT_OUTPUT_SIZE)
-    namespace = {
-        "torch": torch, "nn": torch.nn, "F": torch.nn.functional,
-        "optim": torch.optim, "numpy": __import__("numpy"),
-        "np": __import__("numpy"), "math": __import__("math"),
-        "OrderedDict": __import__("collections").OrderedDict,
-    }
-    exec(compile(code, "<user_code>", "exec"), namespace)
-
-    model = namespace.get("model")
-    if model is not None and isinstance(model, nn.Module):
-        return model
-
-    for v in namespace.values():
-        if isinstance(v, type) and issubclass(v, nn.Module) and v is not nn.Module:
-            try:
-                return v(input_size, hidden_sizes=cfg.DEFAULT_HIDDEN_SIZES, output_size=output_size)
-            except TypeError:
-                try:
-                    return v()
-                except TypeError as e:
-                    raise ValueError(f"Failed to instantiate model '{v.__name__}': {e}") from e
-    raise ValueError("No nn.Module found in model code")
+    from backend.model_sandbox import instantiate_model
+    model, _, _, _ = instantiate_model(
+        req.get("model_code", ""), "",
+        req.get("input_size", cfg.DEFAULT_INPUT_SIZE),
+        cfg.DEFAULT_HIDDEN_SIZES,
+        req.get("output_size", cfg.DEFAULT_OUTPUT_SIZE),
+    )
+    return model
 
 
 def _get_device():
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def _get_loss_fn(loss_type: str):
-    return nn.CrossEntropyLoss() if loss_type == "cross_entropy" else nn.MSELoss()
 
 
 def _prepare_model_and_data(req):
@@ -95,13 +59,14 @@ def _prepare_model_and_data(req):
     Returns (model, x, y, loss_fn, device).
     """
     model = _make_model(req)
-    model.load_state_dict(_deserialize_tensor(req["model_state"]))
+    model.load_state_dict(deserialize_tensor(req["model_state"]))
     device = _get_device()
     model = model.to(device)
 
-    x = _deserialize_tensor(req["data_x"]).to(device)
-    y = _deserialize_tensor(req["data_y"]).to(device)
-    loss_fn = _get_loss_fn(req.get("loss_fn", "cross_entropy"))
+    x = deserialize_tensor(req["data_x"]).to(device)
+    y = deserialize_tensor(req["data_y"]).to(device)
+    task = "classification" if req.get("loss_fn", "cross_entropy") == "cross_entropy" else "regression"
+    loss_fn = make_loss_fn(task)
 
     return model, x, y, loss_fn, device
 
@@ -127,7 +92,7 @@ def _compute_hessian(req):
             "hessian_matrix": None,
             "is_diagonal": True,
             "num_parameters": n,
-            "model_state": _serialize_tensor(model.state_dict()),
+            "model_state": serialize_tensor(model.state_dict()),
         }
     else:
         H = compute_full_hessian_kernel(model, x, y, loss_fn, n)
@@ -138,12 +103,12 @@ def _compute_hessian(req):
             "hessian_matrix": H,
             "is_diagonal": False,
             "num_parameters": n,
-            "model_state": _serialize_tensor(model.state_dict()),
+            "model_state": serialize_tensor(model.state_dict()),
         }
 
 
 def _compute_eigenvalues(req):
-    H = _deserialize_tensor(req["hessian"])
+    H = deserialize_tensor(req["hessian"])
     is_diag = req.get("is_diagonal", False)
     method = req["params"].get("method", "exact" if not is_diag else "diagonal")
     return compute_eigenvalues(H, method, is_diag)
@@ -164,7 +129,7 @@ def _compute_landscape(req):
         snapshots_blob = req.get("snapshots")
         if snapshots_blob is None:
             raise ValueError("PCA mode requires param snapshots")
-        S = _deserialize_tensor(snapshots_blob)
+        S = deserialize_tensor(snapshots_blob)
         mean_vec, d1, d2, _traj_x, _traj_y, _explained_var, base_range = compute_pca_from_snapshots(S)
         grid_range = base_range * range_factor
     else:

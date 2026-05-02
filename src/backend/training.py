@@ -1,14 +1,13 @@
 """Async training loop with progress reporting."""
 
 import asyncio
-import io
 import time
 
 import torch
-import torch.nn as nn
 
 import backend.config as cfg
 from backend.protocol import make_error, make_push, make_status
+from backend.utils import make_loss_fn, serialize_tensor
 
 # ---------------------------------------------------------------------------
 # Pure computation kernel — no Session / asyncio dependency
@@ -99,9 +98,7 @@ def run_training_sync(model, optimizer, loss_fn, train_loader, test_loader, task
         final_loss = loss_history[-1] if loss_history else 0.0
 
     # Serialize model state
-    buf = io.BytesIO()
-    torch.save(model.state_dict(), buf)
-    model_state = buf.getvalue()
+    model_state = serialize_tensor(model.state_dict())
 
     return {
         "loss_history": loss_history,
@@ -128,10 +125,7 @@ async def run_training(session, payload, ws):
     test_loader = session.test_loader
     task = session.task_type
 
-    if task == "classification":
-        loss_fn = nn.CrossEntropyLoss()
-    else:
-        loss_fn = nn.MSELoss()
+    loss_fn = make_loss_fn(task)
     session.loss_fn = loss_fn
 
     session.loss_history.clear()

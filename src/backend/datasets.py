@@ -1,15 +1,19 @@
 """Dataset loading and synthetic data generation."""
 
-import os
-
 import numpy as np
 import torch
 import torch.utils.data
-from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
 
-from backend.config import DATASET_CACHE_DIR, DEFAULT_BATCH_SIZE, DEFAULT_TRAIN_SPLIT, XOR_RANDOM_SEED, POLYNOMIAL_RANDOM_SEED
+from backend.config import (
+    DATASET_CACHE_DIR,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_TRAIN_SPLIT,
+    POLYNOMIAL_RANDOM_SEED,
+    XOR_RANDOM_SEED,
+)
 
 
 def load_dataset(name: str, params: dict) -> dict:
@@ -30,103 +34,94 @@ def load_dataset(name: str, params: dict) -> dict:
         raise ValueError(f"Unknown dataset: {name}")
 
 
-def _load_mnist(batch_size, params):
-    normalize = params.get("normalize", True)
-    transform_list = [transforms.ToTensor()]
-    if normalize:
-        transform_list.append(transforms.Normalize((0.1307,), (0.3081,)))
-    transform = transforms.Compose(transform_list)
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
-    full_train = torchvision.datasets.MNIST(
-        root=DATASET_CACHE_DIR, train=True, download=True, transform=transform)
-    full_test = torchvision.datasets.MNIST(
-        root=DATASET_CACHE_DIR, train=False, download=True, transform=transform)
 
-    train_loader = DataLoader(full_train, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(full_test, batch_size=batch_size, shuffle=False)
+def _load_torchvision_dataset(dataset_cls, dataset_kwargs, batch_size,
+                               transform_train, transform_test,
+                               dataset_name, input_shape, num_classes):
+    """Load a torchvision dataset with train/test split and DataLoaders."""
+    normalize = dataset_kwargs.pop("normalize", True)
+    if not normalize:
+        transform_train = transforms.Compose([t for t in transform_train.transforms if not isinstance(t, transforms.Normalize)])
+        transform_test = transforms.Compose([t for t in transform_test.transforms if not isinstance(t, transforms.Normalize)])
+
+    full_train = dataset_cls(root=DATASET_CACHE_DIR, train=True, download=True, transform=transform_train)
+    full_test = dataset_cls(root=DATASET_CACHE_DIR, train=False, download=True, transform=transform_test)
 
     return {
-        "train_loader": train_loader,
-        "test_loader": test_loader,
-        "dataset_name": "MNIST",
-        "input_shape": [1, 28, 28],
-        "input_size": 784,
-        "num_classes": 10,
+        "train_loader": DataLoader(full_train, batch_size=batch_size, shuffle=True),
+        "test_loader": DataLoader(full_test, batch_size=batch_size, shuffle=False),
+        "dataset_name": dataset_name,
+        "input_shape": input_shape,
+        "input_size": int(np.prod(input_shape)),
+        "num_classes": num_classes,
         "train_samples": len(full_train),
         "test_samples": len(full_test),
         "task": "classification",
     }
+
+
+def _split_tensor_dataset(data, labels, batch_size, dataset_name,
+                           input_shape, num_classes, task):
+    """Split a TensorDataset into train/test loaders and return metadata."""
+    num_samples = len(data)
+    split = int(DEFAULT_TRAIN_SPLIT * num_samples)
+
+    ds = torch.utils.data.TensorDataset(data, labels)
+    train_ds = torch.utils.data.Subset(ds, range(split))
+    test_ds = torch.utils.data.Subset(ds, range(split, num_samples))
+
+    return {
+        "train_loader": DataLoader(train_ds, batch_size=batch_size, shuffle=True),
+        "test_loader": DataLoader(test_ds, batch_size=batch_size, shuffle=False),
+        "dataset_name": dataset_name,
+        "input_shape": input_shape,
+        "input_size": int(np.prod(input_shape)),
+        "num_classes": num_classes,
+        "train_samples": split,
+        "test_samples": num_samples - split,
+        "task": task,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Dataset-specific loaders
+# ---------------------------------------------------------------------------
+
+
+def _load_mnist(batch_size, params):
+    transform_train = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+    transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+    return _load_torchvision_dataset(
+        torchvision.datasets.MNIST, params, batch_size,
+        transform_train, transform_test, "MNIST", [1, 28, 28], 10,
+    )
 
 
 def _load_cifar10(batch_size, params):
-    normalize = params.get("normalize", True)
-    transform_train = [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor()]
-    transform_test = [transforms.ToTensor()]
-    if normalize:
-        norm = transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
-        transform_train.append(norm)
-        transform_test.append(norm)
-    transform_train = transforms.Compose(transform_train)
-    transform_test = transforms.Compose(transform_test)
-
-    full_train = torchvision.datasets.CIFAR10(
-        root=DATASET_CACHE_DIR, train=True, download=True, transform=transform_train)
-    full_test = torchvision.datasets.CIFAR10(
-        root=DATASET_CACHE_DIR, train=False, download=True, transform=transform_test)
-
-    train_loader = DataLoader(full_train, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(full_test, batch_size=batch_size, shuffle=False)
-
-    return {
-        "train_loader": train_loader,
-        "test_loader": test_loader,
-        "dataset_name": "CIFAR-10",
-        "input_shape": [3, 32, 32],
-        "input_size": 3072,
-        "num_classes": 10,
-        "train_samples": len(full_train),
-        "test_samples": len(full_test),
-        "task": "classification",
-    }
+    aug = [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor()]
+    transform_train = transforms.Compose(aug + [transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
+    transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
+    return _load_torchvision_dataset(
+        torchvision.datasets.CIFAR10, params, batch_size,
+        transform_train, transform_test, "CIFAR-10", [3, 32, 32], 10,
+    )
 
 
 def _load_cifar100(batch_size, params):
-    normalize = params.get("normalize", True)
-    transform_train = [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor()]
-    transform_test = [transforms.ToTensor()]
-    if normalize:
-        norm = transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-        transform_train.append(norm)
-        transform_test.append(norm)
-    transform_train = transforms.Compose(transform_train)
-    transform_test = transforms.Compose(transform_test)
-
-    full_train = torchvision.datasets.CIFAR100(
-        root=DATASET_CACHE_DIR, train=True, download=True, transform=transform_train)
-    full_test = torchvision.datasets.CIFAR100(
-        root=DATASET_CACHE_DIR, train=False, download=True, transform=transform_test)
-
-    train_loader = DataLoader(full_train, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(full_test, batch_size=batch_size, shuffle=False)
-
-    return {
-        "train_loader": train_loader,
-        "test_loader": test_loader,
-        "dataset_name": "CIFAR-100",
-        "input_shape": [3, 32, 32],
-        "input_size": 3072,
-        "num_classes": 100,
-        "train_samples": len(full_train),
-        "test_samples": len(full_test),
-        "task": "classification",
-    }
+    aug = [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor()]
+    transform_train = transforms.Compose(aug + [transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
+    transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
+    return _load_torchvision_dataset(
+        torchvision.datasets.CIFAR100, params, batch_size,
+        transform_train, transform_test, "CIFAR-100", [3, 32, 32], 100,
+    )
 
 
 def _generate_xor(batch_size, params):
-    """Generate XOR classification data.
-    Four clusters at (0,0), (0,1), (1,0), (1,1).
-    Label 0: both same (0,0), (1,1). Label 1: different (0,1), (1,0).
-    """
     num_samples = params.get("num_samples", 1000)
     noise = params.get("noise_level", 0.05)
 
@@ -138,34 +133,14 @@ def _generate_xor(batch_size, params):
     data = centers[indices] + np.random.randn(num_samples, 2) * noise
     labels = labels_center[indices]
 
-    data = torch.tensor(data, dtype=torch.float32)
-    labels = torch.tensor(labels, dtype=torch.long)
-
-    ds = torch.utils.data.TensorDataset(data, labels)
-    split = int(DEFAULT_TRAIN_SPLIT * num_samples)
-    train_ds = torch.utils.data.Subset(ds, range(split))
-    test_ds = torch.utils.data.Subset(ds, range(split, num_samples))
-
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
-
-    return {
-        "train_loader": train_loader,
-        "test_loader": test_loader,
-        "dataset_name": "XOR",
-        "input_shape": [2],
-        "input_size": 2,
-        "num_classes": 2,
-        "train_samples": split,
-        "test_samples": num_samples - split,
-        "task": "classification",
-    }
+    return _split_tensor_dataset(
+        torch.tensor(data, dtype=torch.float32),
+        torch.tensor(labels, dtype=torch.long),
+        batch_size, "XOR", [2], 2, "classification",
+    )
 
 
 def _generate_polynomial(batch_size, params):
-    """Generate polynomial regression data.
-    y = w_0 + w_1*x + w_2*x^2 + ... + w_d*x^d + noise
-    """
     num_samples = params.get("num_samples", 1000)
     degree = params.get("degree", 3)
     noise = params.get("noise_level", 0.1)
@@ -174,7 +149,6 @@ def _generate_polynomial(batch_size, params):
     np.random.seed(POLYNOMIAL_RANDOM_SEED)
     x = np.random.uniform(-2, 2, (num_samples, input_dim)).astype(np.float32)
 
-    # Generate random polynomial coefficients, sum over input dims
     y = np.zeros(num_samples, dtype=np.float32)
     for d in range(degree + 1):
         coeffs = np.random.randn(input_dim).astype(np.float32) * (0.5 / (d + 1))
@@ -182,25 +156,7 @@ def _generate_polynomial(batch_size, params):
 
     y += np.random.randn(num_samples).astype(np.float32) * noise
 
-    x_t = torch.tensor(x)
-    y_t = torch.tensor(y).unsqueeze(1)
-
-    ds = torch.utils.data.TensorDataset(x_t, y_t)
-    split = int(DEFAULT_TRAIN_SPLIT * num_samples)
-    train_ds = torch.utils.data.Subset(ds, range(split))
-    test_ds = torch.utils.data.Subset(ds, range(split, num_samples))
-
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
-
-    return {
-        "train_loader": train_loader,
-        "test_loader": test_loader,
-        "dataset_name": "Polynomial",
-        "input_shape": [input_dim],
-        "input_size": input_dim,
-        "num_classes": 1,
-        "train_samples": split,
-        "test_samples": num_samples - split,
-        "task": "regression",
-    }
+    return _split_tensor_dataset(
+        torch.tensor(x), torch.tensor(y).unsqueeze(1),
+        batch_size, "Polynomial", [input_dim], 1, "regression",
+    )

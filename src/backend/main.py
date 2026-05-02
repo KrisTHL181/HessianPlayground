@@ -14,9 +14,9 @@ _src_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from aiohttp import web
+from aiohttp import web  # noqa: E402
 
-from backend.config import DEFAULT_HOST, DEFAULT_PORT
+from backend.config import DEFAULT_HOST, DEFAULT_PORT  # noqa: E402
 
 
 def main():

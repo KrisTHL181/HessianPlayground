@@ -1,6 +1,5 @@
 """Per-connection session state management."""
 
-import copy
 import torch
 import torch.nn as nn
 
@@ -82,12 +81,8 @@ class Session:
 
     def set_flat_params(self, flat_params: torch.Tensor):
         """Set model parameters from a single flat vector."""
-        offset = 0
-        with torch.no_grad():
-            for p in self.model.parameters():
-                numel = p.numel()
-                p.data.copy_(flat_params[offset:offset + numel].view_as(p))
-                offset += numel
+        from backend.utils import set_flat_params as _set_flat
+        _set_flat(self.model, flat_params)
 
     def save_snapshot(self):
         """Deep-copy current model parameters."""

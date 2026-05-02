@@ -109,11 +109,9 @@ def compute_eigenvalues(H, method="exact", is_diagonal=False):
     elif method == "exact":
         # For numerical stability, ensure symmetric
         H_sym = (H + H.T) / 2
-        # Add small jitter
         try:
             evals = torch.linalg.eigvalsh(H_sym)
-        except Exception:
-            # Fallback: add regularization
+        except torch.linalg.LinAlgError:
             H_sym = H_sym + torch.eye(H_sym.shape[0]) * 1e-6
             evals = torch.linalg.eigvalsh(H_sym)
     elif method == "power_iteration":

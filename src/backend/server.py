@@ -11,7 +11,7 @@ _src_dir = os.path.join(_project_root, "src")
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from backend.config import DATASET_CACHE_DIR
+from backend.config import DATASET_CACHE_DIR  # noqa: E402
 
 
 def create_app():

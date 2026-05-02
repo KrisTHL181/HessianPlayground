@@ -3,9 +3,36 @@
 import torch
 
 import backend.config as cfg
+from backend.utils import apply_flat_delta, serialize_tensor
 
 # ---------------------------------------------------------------------------
-# Pure computation kernel — no Session dependency
+# Shared linear system solver
+# ---------------------------------------------------------------------------
+
+
+def _solve_linear_system(H, b, is_diag, regularization, size_threshold):
+    """Solve (H + reg*I) @ x = b. Returns (x, solver_name, converged)."""
+    n = b.numel()
+    if is_diag:
+        H_reg = H + regularization
+        x = b / H_reg
+        return x, "diagonal", True
+
+    H_reg = H + regularization * torch.eye(n)
+    if n < size_threshold:
+        try:
+            x = torch.linalg.solve(H_reg, b)
+            return x, "direct_solve", True
+        except torch.linalg.LinAlgError:
+            x, *_ = torch.linalg.lstsq(H_reg, b.unsqueeze(1))
+            return x.squeeze(1), "lstsq", True
+
+    x, *_ = torch.linalg.lstsq(H_reg, b.unsqueeze(1))
+    return x.squeeze(1), "lstsq", True
+
+
+# ---------------------------------------------------------------------------
+# Pure computation kernels — no Session dependency
 # ---------------------------------------------------------------------------
 
 
@@ -27,38 +54,10 @@ def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularizati
     step_norm, gradient_norm, solver_used, regularization_used, converged,
     iterations, step_applied, and optionally model_state (bytes).
     """
-    n = g.numel()
-
     loss_before = _compute_loss(model, data_loader, loss_fn)
 
-    if is_diag:
-        H_reg = H + regularization
-        dx = -g / H_reg
-        solver = "diagonal"
-        converged = True
-        iterations = None
-    else:
-        H_reg = H + regularization * torch.eye(n)
-        rhs = -g
-
-        if n < cfg.DIRECT_SOLVE_SIZE_THRESHOLD:
-            try:
-                dx = torch.linalg.solve(H_reg, rhs)
-                solver = "direct_solve"
-                converged = True
-                iterations = None
-            except Exception:
-                dx, _residuals, _rank, _svals = torch.linalg.lstsq(H_reg, rhs.unsqueeze(1))
-                dx = dx.squeeze(1)
-                solver = "lstsq"
-                converged = True
-                iterations = None
-        else:
-            dx, _residuals, _rank, _svals = torch.linalg.lstsq(H_reg, rhs.unsqueeze(1))
-            dx = dx.squeeze(1)
-            solver = "lstsq"
-            converged = True
-            iterations = None
+    dx, solver, converged = _solve_linear_system(H, -g, is_diag, regularization, cfg.DIRECT_SOLVE_SIZE_THRESHOLD)
+    iterations = None
 
     dx = step_scale * dx
     step_norm = dx.norm().item()
@@ -69,7 +68,7 @@ def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularizati
     model_state = None
     if apply_step:
         original_params = [p.data.clone() for p in model.parameters()]
-        _apply_flat_delta(model, dx)
+        apply_flat_delta(model, dx)
         loss_after = _compute_loss(model, data_loader, loss_fn)
         step_applied = True
 
@@ -80,9 +79,7 @@ def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularizati
             step_applied = False
 
         if step_applied:
-            buf = __import__("io").BytesIO()
-            torch.save(model.state_dict(), buf)
-            model_state = buf.getvalue()
+            model_state = serialize_tensor(model.state_dict())
 
     loss_improvement = loss_before - (loss_after or loss_before)
 
@@ -102,14 +99,6 @@ def solve_newton_kernel(model, loss_fn, data_loader, g, H, is_diag, regularizati
     }
 
 
-def _apply_flat_delta(model, delta):
-    """Add a flat delta vector to model parameters in-place."""
-    offset = 0
-    with torch.no_grad():
-        for p in model.parameters():
-            numel = p.numel()
-            p.data.copy_((p.data.float() + delta[offset:offset + numel].view_as(p.float())).to(p.dtype))
-            offset += numel
 
 
 # ---------------------------------------------------------------------------
@@ -192,28 +181,7 @@ def solve_linear(session, rhs, regularization, ws):
         loss.backward()
         b = -session.get_flattened_gradients()
 
-    if is_diag:
-        H_reg = H + regularization
-        x = b / H_reg
-        solver = "diagonal"
-        converged = True
-    else:
-        H_reg = H + regularization * torch.eye(n)
-        if n < cfg.DIRECT_SOLVE_SIZE_THRESHOLD:
-            try:
-                x = torch.linalg.solve(H_reg, b)
-                solver = "direct_solve"
-                converged = True
-            except Exception:
-                x, *_ = torch.linalg.lstsq(H_reg, b.unsqueeze(1))
-                x = x.squeeze(1)
-                solver = "lstsq"
-                converged = True
-        else:
-            x, *_ = torch.linalg.lstsq(H_reg, b.unsqueeze(1))
-            x = x.squeeze(1)
-            solver = "lstsq"
-            converged = True
+    x, solver, converged = _solve_linear_system(H, b, is_diag, regularization, cfg.DIRECT_SOLVE_SIZE_THRESHOLD)
 
     return {
         "step_type": "linear_system",

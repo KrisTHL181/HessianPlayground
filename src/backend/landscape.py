@@ -8,6 +8,7 @@ import torch
 
 import backend.config as cfg
 from backend.protocol import make_status
+from backend.utils import set_flat_params
 
 # ---------------------------------------------------------------------------
 # Pure computation kernels — no Session dependency, no asyncio
@@ -68,14 +69,6 @@ def generate_random_directions(n, seed=None):
     return d1, d2
 
 
-def _set_flat_params(model, flat, param_shapes, numels):
-    """Copy a flat parameter vector into the model's parameters in-place."""
-    offset = 0
-    for p, shape, numel in zip(model.parameters(), param_shapes, numels):
-        p.data.copy_(flat[offset:offset + numel].view_as(p))
-        offset += numel
-
-
 def sample_loss_grid_sync(model, center, dir1, dir2, x_batch, y_batch, loss_fn, resolution, grid_range):
     """Evaluate loss on a 2D grid in parameter space (sync, no progress).
 
@@ -96,15 +89,13 @@ def sample_loss_grid_sync(model, center, dir1, dir2, x_batch, y_batch, loss_fn, 
     grid_y = betas.tolist()
     loss_grid = [[0.0] * resolution for _ in range(resolution)]
 
-    param_shapes = [p.shape for p in model.parameters()]
-    numels = [p.numel() for p in model.parameters()]
     orig_params = [p.data.clone() for p in model.parameters()]
 
     with torch.no_grad():
         for i, alpha in enumerate(alphas):
             for j, beta in enumerate(betas):
                 flat = center + alpha * dir1 + beta * dir2
-                _set_flat_params(model, flat, param_shapes, numels)
+                set_flat_params(model, flat)
                 model.eval()
                 output = model(x_batch)
                 loss_grid[i][j] = float(loss_fn(output, y_batch).cpu().item())
@@ -195,8 +186,6 @@ async def _sample_loss_grid(session, model, center, dir1, dir2, resolution, grid
     loss_fn = session.loss_fn
     x_batch, y_batch = next(iter(session.train_loader))
 
-    param_shapes = [p.shape for p in model.parameters()]
-    numels = [p.numel() for p in model.parameters()]
     orig_params = [p.data.clone() for p in model.parameters()]
 
     alphas = np.linspace(-grid_range, grid_range, resolution)
@@ -213,7 +202,7 @@ async def _sample_loss_grid(session, model, center, dir1, dir2, resolution, grid
         for i, alpha in enumerate(alphas):
             for j, beta in enumerate(betas):
                 flat = center + alpha * dir1 + beta * dir2
-                _set_flat_params(model, flat, param_shapes, numels)
+                set_flat_params(model, flat)
                 model.eval()
                 output = model(x_batch)
                 loss_grid[i][j] = float(loss_fn(output, y_batch).cpu().item())

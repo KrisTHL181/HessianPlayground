@@ -1,6 +1,5 @@
 """Remote execution via SSH for offloading computation to a remote server."""
 
-import io
 import os
 import pickle
 import tempfile
@@ -9,6 +8,7 @@ import uuid
 import torch
 
 import backend.config as cfg
+from backend.utils import deserialize_tensor, serialize_tensor
 
 
 class RemoteExecutor:
@@ -118,7 +118,7 @@ class RemoteExecutor:
         else:
             data["loss_fn"] = "cross_entropy"  # default
 
-        result = self._execute(data)
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
         r = result["result"]
 
         hessian = r.get("hessian_matrix")
@@ -130,7 +130,7 @@ class RemoteExecutor:
 
         # Update model if remote training modified it
         if r.get("model_state"):
-            session.model.load_state_dict(_deserialize(r["model_state"]))
+            session.model.load_state_dict(deserialize_tensor(r["model_state"], cfg.DEVICE))
 
         return hessian, is_diag
 
@@ -142,22 +142,22 @@ class RemoteExecutor:
 
         data = {
             "type": "compute_eigenvalues",
-            "hessian": _serialize(H),
+            "hessian": serialize_tensor(H),
             "is_diagonal": is_diag,
             "params": {"method": method},
         }
-        result = self._execute(data)
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
         return result["result"]
 
     async def compute_landscape(self, session, resolution, range_factor, mode, seed, ws):
         data = self._serialize_landscape(session, resolution, range_factor, mode, seed)
-        result = self._execute(data)
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
         return result["result"]
 
     def compute_landscape_sync(self, session, resolution, range_factor, mode, seed):
         """Synchronous version for run_in_executor."""
         data = self._serialize_landscape(session, resolution, range_factor, mode, seed)
-        result = self._execute(data)
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
         return result["result"]
 
     def _serialize_landscape(self, session, resolution, range_factor, mode, seed):
@@ -174,7 +174,7 @@ class RemoteExecutor:
             for i, sd in enumerate(session.param_snapshots):
                 flat = torch.cat([v.float().view(-1) for v in sd.values()])
                 S[i] = flat
-            data["snapshots"] = _serialize(S)
+            data["snapshots"] = serialize_tensor(S)
         return data
 
     def solve_newton(self, session, regularization, apply_step, step_scale):
@@ -190,12 +190,12 @@ class RemoteExecutor:
         else:
             data["loss_fn"] = "cross_entropy"
 
-        result = self._execute(data)
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
         r = result["result"]
 
         # Update model if step was applied
         if r.get("step_applied") and r.get("model_state"):
-            session.model.load_state_dict(_deserialize(r["model_state"]))
+            session.model.load_state_dict(deserialize_tensor(r["model_state"], cfg.DEVICE))
             session.invalidate_cache()
         r.pop("model_state", None)  # bytes, not JSON-serializable
 
@@ -214,11 +214,11 @@ class RemoteExecutor:
         else:
             data["loss_fn"] = "cross_entropy"
 
-        result = self._execute_training(data)
+        result = self._execute_remote(data, cfg.REMOTE_TRAINING_TIMEOUT, capture_progress=True)
         r = result["result"]
 
         if r.get("model_state"):
-            session.model.load_state_dict(_deserialize(r["model_state"]))
+            session.model.load_state_dict(deserialize_tensor(r["model_state"], cfg.DEVICE))
             session.invalidate_cache()
         r.pop("model_state", None)  # bytes, not JSON-serializable
 
@@ -231,12 +231,12 @@ class RemoteExecutor:
     def _serialize_session(self, session) -> dict:
         """Extract serializable data from a session for remote execution."""
         model_code = session.model_code or ""
-        model_state = _serialize(session.model.state_dict())
+        model_state = serialize_tensor(session.model.state_dict())
 
         # Get a batch of data
         x, y = next(iter(session.train_loader))
-        data_x = _serialize(x)
-        data_y = _serialize(y)
+        data_x = serialize_tensor(x)
+        data_y = serialize_tensor(y)
 
         return {
             "model_code": model_code,
@@ -248,7 +248,7 @@ class RemoteExecutor:
             "output_size": session.output_size,
         }
 
-    def _execute(self, request: dict) -> dict:
+    def _execute_remote(self, request: dict, timeout: int, capture_progress: bool = False) -> dict:
         """Execute a computation on the remote and return the response dict."""
         if not self.connected:
             raise RuntimeError("Remote executor is not connected")
@@ -256,79 +256,30 @@ class RemoteExecutor:
         input_path = f"{self._remote_dir}/input.pkl"
         output_path = f"{self._remote_dir}/output.pkl"
 
-        # Write input
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as f:
             pickle.dump(request, f)
             local_input = f.name
 
+        response = None
+        progress_lines = []
         try:
             self._sftp.put(local_input, input_path)
 
-            # Execute worker
             cmd = f"{cfg.REMOTE_PYTHON} {self._remote_dir}/worker.py --input {input_path} --output {output_path}"
-            _, stdout, stderr = self._client.exec_command(cmd, timeout=cfg.REMOTE_COMPUTE_TIMEOUT)
+            _, stdout, stderr = self._client.exec_command(cmd, timeout=timeout)
+
+            if capture_progress:
+                for line in iter(stdout.readline, ""):
+                    line = line.strip()
+                    if line:
+                        progress_lines.append(line)
+
             exit_code = stdout.channel.recv_exit_status()
             stderr_text = stderr.read().decode("utf-8", errors="replace")
 
             if exit_code != 0:
                 raise RuntimeError(f"Remote worker exited with code {exit_code}: {stderr_text}")
 
-            # Download output
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as f:
-                local_output = f.name
-            self._sftp.get(output_path, local_output)
-
-            with open(local_output, "rb") as f:
-                response = pickle.load(f)
-
-            os.unlink(local_output)
-
-        finally:
-            os.unlink(local_input)
-            # Clean up remote files
-            try:
-                self._run_remote(f"rm -f {input_path} {output_path}")
-            except Exception:
-                pass
-
-        if not response.get("success"):
-            raise RuntimeError(f"Remote computation failed: {response.get('error', 'unknown error')}")
-
-        return response
-
-    def _execute_training(self, request: dict) -> dict:
-        """Execute training on remote with progress parsing from stdout."""
-        if not self.connected:
-            raise RuntimeError("Remote executor is not connected")
-
-        input_path = f"{self._remote_dir}/input.pkl"
-        output_path = f"{self._remote_dir}/output.pkl"
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as f:
-            pickle.dump(request, f)
-            local_input = f.name
-
-        try:
-            self._sftp.put(local_input, input_path)
-
-            cmd = f"{cfg.REMOTE_PYTHON} {self._remote_dir}/worker.py --input {input_path} --output {output_path}"
-            _, stdout, stderr = self._client.exec_command(cmd, timeout=cfg.REMOTE_TRAINING_TIMEOUT)
-
-            # Parse progress from stdout
-            progress_lines = []
-            for line in iter(stdout.readline, ""):
-                line = line.strip()
-                if line.startswith("PROGRESS|"):
-                    progress_lines.append(line)
-                elif line:
-                    progress_lines.append(line)
-
-            exit_code = stdout.channel.recv_exit_status()
-            stderr_text = stderr.read().decode("utf-8", errors="replace")
-
-            if exit_code != 0:
-                raise RuntimeError(f"Remote training failed (exit {exit_code}): {stderr_text}")
-
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as f:
                 local_output = f.name
             self._sftp.get(output_path, local_output)
@@ -345,11 +296,11 @@ class RemoteExecutor:
             except Exception:
                 pass
 
-        if not response.get("success"):
-            raise RuntimeError(f"Remote training failed: {response.get('error', 'unknown error')}")
+        if response is None or not response.get("success"):
+            raise RuntimeError(f"Remote computation failed: {response.get('error', 'unknown error') if response else 'no response'}")
 
-        # Attach progress lines
-        response["progress"] = progress_lines
+        if capture_progress:
+            response["progress"] = progress_lines
         return response
 
     def _run_remote(self, cmd: str) -> tuple:
@@ -359,12 +310,3 @@ class RemoteExecutor:
         return exit_code, stdout.read().decode(), stderr.read().decode()
 
 
-def _serialize(obj) -> bytes:
-    buf = io.BytesIO()
-    torch.save(obj, buf)
-    return buf.getvalue()
-
-
-def _deserialize(data: bytes):
-    buf = io.BytesIO(data)
-    return torch.load(buf, map_location=cfg.DEVICE, weights_only=False)

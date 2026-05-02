@@ -95,9 +95,7 @@ _RUNTIME_CONFIG_KEYS = {
     "REMOTE_TRAINING_TIMEOUT",
 }
 
-_DEFAULTS = {k: None for k in _RUNTIME_CONFIG_KEYS}
-for _k in _RUNTIME_CONFIG_KEYS:
-    _DEFAULTS[_k] = globals()[_k]
+_DEFAULTS = {k: globals()[k] for k in _RUNTIME_CONFIG_KEYS}
 
 
 def get_runtime_config():

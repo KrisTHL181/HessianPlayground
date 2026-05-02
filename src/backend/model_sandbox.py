@@ -21,9 +21,9 @@ def _get_globals() -> dict:
         "np": numpy,
         "math": math,
         "OrderedDict": collections.OrderedDict,
-        "List": typing.List,
+        "List": list,
         "Optional": typing.Optional,
-        "Tuple": typing.Tuple,
+        "Tuple": tuple,
     }
 
 
