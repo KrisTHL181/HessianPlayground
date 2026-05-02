@@ -1814,6 +1814,8 @@ class App {
         document.getElementById('btn-sharpness').onclick = () => this._computeSharpness();
         document.getElementById('btn-spectral').onclick = () => this._computeSpectralDensity();
         document.getElementById('btn-share').onclick = () => this._shareURL();
+        document.getElementById('btn-export').onclick = () => this._exportSession();
+        document.getElementById('btn-import').onchange = (e) => this._importSession(e);
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
@@ -2538,6 +2540,39 @@ class App {
             this.log.error(tf('log.model_adaptation_failed', { message: e.message }));
             this._pendingAdaptation = null;
         }
+    }
+
+    async _exportSession() {
+        try {
+            this.log.info(t('log.exporting_session'));
+            const result = await this.ws.send('export_session', { include_snapshots: true }, 30000);
+            const blob = new Blob([result.data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'hessian_session.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            this.log.info(t('log.session_exported'));
+        } catch (e) { this.log.error(tf('log.error', { message: e.message })); }
+    }
+
+    async _importSession(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            this.log.info(t('log.importing_session'));
+            const result = await this.ws.send('import_session', { data: text }, 30000);
+            this.log.info(tf('log.session_imported', { imported: result.status }));
+            if (result.model_restored) {
+                this.state.hasModel = true;
+                this._setButtons(true);
+                // Refresh model summary
+                const summary = await this.ws.send('get_model_summary', {}, 5000);
+                this.log.info(tf('log.model_created', { model_name: summary.model_name, num_parameters: summary.num_parameters }));
+            }
+        } catch (e) { this.log.error(tf('log.error', { message: e.message })); }
     }
 
     _shareURL() {

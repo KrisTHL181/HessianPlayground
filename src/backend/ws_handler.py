@@ -93,6 +93,8 @@ ROUTER = {
     "compute_gradient_noise_scale": "_handle_compute_gradient_noise_scale",
     "compute_sharpness_landscape": "_handle_compute_sharpness_landscape",
     "compute_spectral_density": "_handle_compute_spectral_density",
+    "export_session": "_handle_export_session",
+    "import_session": "_handle_import_session",
 }
 
 
@@ -161,6 +163,8 @@ def _get_response_type(request_type):
         "compute_gradient_noise_scale": "gradient_noise_scale",
         "compute_sharpness_landscape": "landscape_computed",
         "compute_spectral_density": "spectral_density",
+        "export_session": "session_exported",
+        "import_session": "session_imported",
     }
     return mapping.get(request_type, "response")
 
@@ -348,6 +352,63 @@ class _Dispatcher:
             "batch_size": batch_size,
             "task": task,
         }
+
+    @staticmethod
+    async def _handle_export_session(session, payload, ws):
+        import json
+        data = {
+            "model_code": session.model_code if session.model else "",
+            "dataset_info": session.dataset_info,
+            "task_type": session.task_type,
+            "input_size": session.input_size,
+            "output_size": session.output_size,
+            "loss_history": [float(x) for x in session.loss_history],
+            "accuracy_history": [float(x) for x in session.accuracy_history],
+            "num_snapshots": len(session.param_snapshots),
+            "has_hessian": session._cached_hessian is not None,
+            "has_ntk": session._cached_ntk is not None,
+            "has_fisher": session._cached_fisher is not None,
+        }
+        if session.dataset_info:
+            data["dataset_info"] = {k: v for k, v in session.dataset_info.items()
+                                    if k not in ("train_loader", "test_loader")}
+
+        # Serialize snapshots (weight tensors -> lists)
+        if payload.get("include_snapshots", False) and session.param_snapshots:
+            snap_list = []
+            for sd in session.param_snapshots:
+                snap_list.append({k: v.tolist() for k, v in sd.items()})
+            data["snapshots"] = snap_list
+
+        return {"data": json.dumps(data)}
+
+    @staticmethod
+    async def _handle_import_session(session, payload, ws):
+        import json
+        data = json.loads(payload.get("data", "{}"))
+
+        if data.get("model_code"):
+            # Execute model code
+            from backend.model_sandbox import instantiate_model
+            in_size = data.get("input_size", 784)
+            out_size = data.get("output_size", 10)
+            hidden_sizes = [128, 64]
+
+            model, arch, pcount, warn = instantiate_model(
+                data["model_code"], "", in_size, hidden_sizes, out_size
+            )
+            model = model.to(session.device)
+            session.model = model
+            session.model_code = data["model_code"]
+            session._param_count = pcount
+            session.input_size = in_size
+            session.output_size = out_size
+            session.task_type = data.get("task_type", "classification")
+
+        session.loss_history = [float(x) for x in data.get("loss_history", [])]
+        session.accuracy_history = [float(x) for x in data.get("accuracy_history", [])]
+
+        return {"status": "imported", "model_restored": data.get("model_code", "") != ""}
 
     @staticmethod
     async def _handle_compute_spectral_density(session, payload, ws):
