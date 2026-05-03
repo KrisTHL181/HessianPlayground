@@ -107,6 +107,8 @@
                         <option value="RMSprop">RMSprop</option>
                         <option value="Adagrad">Adagrad</option>
                         <option value="Adadelta">Adadelta</option>
+                        <option value="newton_step" data-i18n="opt.newton_step">Newton Step</option>
+                        <option value="natural_gradient" data-i18n="opt.natural_gradient">Natural Gradient</option>
                         <option value="custom" data-i18n="opt.custom_code">Custom Code</option>
                     </select>
                 </div>
@@ -116,7 +118,7 @@
                         style="width:100%;height:80px;background:var(--bg);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:12px"></textarea>
                 </div>
 
-                <div class="config-group">
+                <div class="config-group" id="lr-group">
                     <label data-i18n="label.learning_rate">Learning Rate</label>
                     <input type="number" id="lr-input" value="0.001" step="0.0001">
                 </div>
@@ -189,8 +191,6 @@
                     <button class="btn btn-ghost" id="btn-interpolation" disabled data-i18n="btn.interpolation">Interpolation</button>
                 </div>
                 <div class="btn-row">
-                    <button class="btn btn-ghost" id="btn-newton" disabled data-i18n="btn.newton_step">Newton Step</button>
-                    <button class="btn btn-ghost" id="btn-natural-grad" disabled data-i18n="btn.natural_gradient">Natural Gradient</button>
                     <button class="btn btn-ghost" id="btn-lr-test" disabled data-i18n="btn.lr_test">LR Test</button>
                     <button class="btn btn-ghost" id="btn-noise-scale" disabled data-i18n="btn.noise_scale">Noise Scale</button>
                     <button class="btn btn-ghost" id="btn-sharpness" disabled data-i18n="btn.sharpness">Sharpness</button>

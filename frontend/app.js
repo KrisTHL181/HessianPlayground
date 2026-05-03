@@ -45,6 +45,14 @@ const OPTIMIZER_PARAMS = {
         { name: 'weight_decay', label: 'Weight Decay', type: 'number', defaultValue: 0, step: 0.0001, min: 0 },
         { name: 'eps', label: 'ε', type: 'number', defaultValue: 1e-6, step: 1e-8, min: 0 },
     ],
+    newton_step: [
+        { name: 'regularization', label: 'Damping', type: 'number', defaultValue: 1e-4, step: 0.0001, min: 0 },
+        { name: 'step_scale', label: 'Step Scale', type: 'number', defaultValue: 1.0, step: 0.1, min: 0.01 },
+    ],
+    natural_gradient: [
+        { name: 'regularization', label: 'Damping', type: 'number', defaultValue: 1e-4, step: 0.0001, min: 0 },
+        { name: 'step_scale', label: 'Step Scale', type: 'number', defaultValue: 1.0, step: 0.1, min: 0.01 },
+    ],
 };
 
 const METHOD_NAMES = { full: 'Full', diagonal: 'Diagonal', kfac: 'K-FAC', block_diag: 'Block-Diag' };
@@ -1817,8 +1825,6 @@ class App {
         document.getElementById('btn-share').onclick = () => this._shareURL();
         document.getElementById('btn-export').onclick = () => this._exportSession();
         document.getElementById('btn-import').onchange = (e) => this._importSession(e);
-        document.getElementById('btn-newton').onclick = () => this._solveNewton();
-        document.getElementById('btn-natural-grad').onclick = () => this._solveNaturalGradient();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
         document.getElementById('btn-activations').onclick = () => this._computeActivationStats();
@@ -1876,6 +1882,8 @@ class App {
         document.getElementById('optimizer-select').onchange = (e) => {
             document.getElementById('custom-opt-group').style.display =
                 e.target.value === 'custom' ? 'block' : 'none';
+            const isNewtonNG = e.target.value === 'newton_step' || e.target.value === 'natural_gradient';
+            document.getElementById('lr-group').style.display = isNewtonNG ? 'none' : 'block';
             this._updateOptimizerParams();
         };
 
@@ -2001,7 +2009,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-sharpness', 'btn-spectral', 'btn-newton', 'btn-natural-grad'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-sharpness', 'btn-spectral'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2126,12 +2134,17 @@ class App {
 
     async _setOptimizer() {
         const optName = document.getElementById('optimizer-select').value;
-        let lr = parseFloat(document.getElementById('lr-input').value) || 0.001;
+        const isNewtonNG = optName === 'newton_step' || optName === 'natural_gradient';
         let gradientAscent = false;
-        if (lr < 0) {
-            gradientAscent = true;
-            lr = Math.abs(lr);
-            showToast(t('toast.gradient_ascent'));
+        let lr = 0.001;
+
+        if (!isNewtonNG) {
+            lr = parseFloat(document.getElementById('lr-input').value) || 0.001;
+            if (lr < 0) {
+                gradientAscent = true;
+                lr = Math.abs(lr);
+                showToast(t('toast.gradient_ascent'));
+            }
         }
         try {
             if (optName === 'custom') {
@@ -2139,7 +2152,7 @@ class App {
                 await this.ws.send('set_custom_optimizer', { code, gradient_ascent: gradientAscent });
             } else {
                 const params = this._readOptimizerParams();
-                params.lr = lr;
+                if (!isNewtonNG) params.lr = lr;
                 await this.ws.send('set_optimizer', { optimizer: optName, params, gradient_ascent: gradientAscent });
             }
             this.state.hasOptimizer = true;
@@ -2287,46 +2300,6 @@ class App {
             this.log.info(tf('log.landscape_computed', { mode: result.mode }));
         } catch (e) {
             this.log.error(tf('log.landscape_error', { message: e.message }));
-        }
-    }
-
-    async _solveNewton() {
-        if (!this.state.hasModel) {
-            this.log.error(t('log.create_model_first'));
-            return;
-        }
-        try {
-            this.log.info(t('log.solving_newton'));
-            const result = await this.ws.send('solve_newton_step', {
-                regularization: 1e-4,
-                apply_step: true,
-                step_scale: 1.0,
-            });
-            this.vis.switchTab('equation');
-            this.vis.showEquationResult(result);
-            this.log.info(tf('log.newton_step_result', { loss_before: result.loss_before?.toFixed(4), loss_after: result.loss_after?.toFixed(4), loss_improvement: result.loss_improvement?.toFixed(4) }));
-        } catch (e) {
-            this.log.error(tf('log.newton_error', { message: e.message }));
-        }
-    }
-
-    async _solveNaturalGradient() {
-        if (!this.state.hasModel) {
-            this.log.error(t('log.create_model_first'));
-            return;
-        }
-        try {
-            this.log.info(t('log.computing_natural_gradient'));
-            const result = await this.ws.send('solve_natural_gradient', {
-                regularization: 1e-4,
-                apply_step: true,
-                step_scale: 1.0,
-            });
-            this.vis.switchTab('equation');
-            this.vis.showEquationResult(result);
-            this.log.info(tf('log.natural_gradient_result', { loss_before: result.loss_before?.toFixed(4), loss_after: result.loss_after?.toFixed(4), loss_improvement: result.loss_improvement?.toFixed(4) }));
-        } catch (e) {
-            this.log.error(tf('log.natural_gradient_error', { message: e.message }));
         }
     }
 

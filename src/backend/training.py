@@ -160,7 +160,10 @@ async def run_training(session, payload, ws):
 
                 x, y = x.to(device), y.to(device)
 
-                optimizer.zero_grad()
+                if optimizer is not None:
+                    optimizer.zero_grad()
+                else:
+                    model.zero_grad()
                 output = model(x)
                 loss = loss_fn(output, y)
                 if session.gradient_ascent:
@@ -173,7 +176,14 @@ async def run_training(session, payload, ws):
                     torch.nn.utils.clip_grad_norm_(model.parameters(), clip_norm)
                 post_clip_norm = _compute_grad_norm(model) if clip_norm > 0 else None
 
-                optimizer.step()
+                if session.optimizer_type == "newton_step":
+                    from backend.equations import apply_newton_step
+                    apply_newton_step(session)
+                elif session.optimizer_type == "natural_gradient":
+                    from backend.equations import apply_natural_gradient_step
+                    apply_natural_gradient_step(session)
+                else:
+                    optimizer.step()
 
                 batch_global += 1
                 running_loss += loss.item()
@@ -288,8 +298,10 @@ async def run_lr_range_test(session, payload, ws):
     train_loader = session.train_loader
     device = next(model.parameters()).device
 
-    if model is None or optimizer is None or train_loader is None:
-        raise ValueError("Model, optimizer, and dataset are required")
+    if model is None or train_loader is None:
+        raise ValueError("Model and dataset are required")
+    if optimizer is None:
+        raise ValueError("LR range test requires a standard optimizer (not Newton/Natural Gradient)")
 
     loss_fn = session.loss_fn
     if loss_fn is None:

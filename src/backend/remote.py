@@ -257,6 +257,9 @@ class RemoteExecutor:
         return r
 
     def run_training(self, session, payload):
+        if session.optimizer_type in ("newton_step", "natural_gradient"):
+            raise ValueError("Newton Step and Natural Gradient training are not supported in remote mode")
+
         data = self._serialize_session(session)
         data["type"] = "run_training"
 

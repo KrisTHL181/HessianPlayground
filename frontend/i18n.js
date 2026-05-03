@@ -80,6 +80,8 @@ const I18N = {
 
         // Select options
         'opt.custom_code': 'Custom Code',
+        'opt.newton_step': 'Newton Step',
+        'opt.natural_gradient': 'Natural Gradient',
         'opt.enabled': 'Enabled',
         'opt.disabled': 'Disabled',
         'opt.classification': 'Classification',
@@ -376,6 +378,8 @@ const I18N = {
         'opt.enabled': '启用',
         'opt.disabled': '禁用',
         'opt.custom_code': '自定义代码',
+        'opt.newton_step': '牛顿步',
+        'opt.natural_gradient': '自然梯度',
         'opt.classification': '分类',
         'opt.regression': '回归',
         'snapshot.estimated': '预计保存 {count} 个快照',

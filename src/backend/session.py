@@ -10,6 +10,8 @@ class Session:
     def __init__(self):
         self.model: nn.Module | None = None
         self.optimizer: torch.optim.Optimizer | None = None
+        self.optimizer_type: str = "standard"  # "standard", "newton_step", "natural_gradient"
+        self.newton_config: dict = {}
         self.gradient_ascent: bool = False
         self.loss_fn: callable | None = None
 

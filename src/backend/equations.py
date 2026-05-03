@@ -338,6 +338,119 @@ def solve_natural_gradient(session, regularization, apply_step, step_scale, ws,
     }
 
 
+def apply_newton_step(session):
+    """Apply a single Newton step using the current gradient and cached Hessian.
+
+    Call after loss.backward() in the training loop. The gradient is read from
+    model parameters and the step is applied directly.
+    """
+    g = session.get_flattened_gradients()
+    if g is None:
+        return
+
+    device = next(session.model.parameters()).device
+
+    if session._cached_hessian is None:
+        from backend.hessian import compute_diagonal_hessian
+        H_diag = compute_diagonal_hessian(session)
+        session._cached_hessian = {
+            "type": "diagonal", "data": H_diag,
+            "param_count": session.param_count,
+            "memory_mb": H_diag.numel() * H_diag.element_size() / 1024 / 1024,
+        }
+
+    config = session.newton_config
+    reg = config.get("regularization", 1e-4)
+    step_scale = config.get("step_scale", 1.0)
+    solver = config.get("solver", "auto")
+
+    cache = session._cached_hessian
+    hessian_type = cache["type"]
+
+    if solver == "auto":
+        solver = "cg" if (hessian_type == "full" and session.param_count > 5000) else hessian_type
+
+    if solver == "cg":
+        from backend.hessian import solve_cg
+        cg_result = solve_cg(session, -g, reg)
+        dx = cg_result["solution"]
+    elif solver == "diagonal":
+        H = cache["data"]
+        dx = -g / (H + reg)
+    elif solver == "kfac":
+        from backend.hessian import kfac_newton_step
+        dx = kfac_newton_step(g, cache["data"], reg, step_scale)
+    elif solver == "block_diag":
+        from backend.hessian import block_diag_newton_step
+        dx = block_diag_newton_step(g, cache["data"], reg, step_scale)
+    else:  # "full"
+        H = cache["data"]
+        n = session.param_count
+        work_dtype = _safe_dtype(H)
+        H_f32 = H.to(work_dtype)
+        H_reg = H_f32 + reg * torch.eye(n, device=H.device, dtype=work_dtype)
+        rhs_f32 = (-g).to(work_dtype)
+        if n < 5000:
+            try:
+                dx = torch.linalg.solve(H_reg, rhs_f32)
+            except Exception:
+                dx = torch.linalg.lstsq(H_reg, rhs_f32.unsqueeze(1)).solution.squeeze(1)
+        else:
+            dx = torch.linalg.lstsq(H_reg, rhs_f32.unsqueeze(1)).solution.squeeze(1)
+        dx = dx.to(device=device, dtype=torch.float32)
+
+    session.set_flat_params(session.get_flattened_params() + step_scale * dx)
+
+
+def apply_natural_gradient_step(session):
+    """Apply a single natural gradient step using the current gradient and cached Fisher.
+
+    Call after loss.backward() in the training loop. The gradient is read from
+    model parameters and the step is applied directly.
+    """
+    g = session.get_flattened_gradients()
+    if g is None:
+        return
+
+    device = next(session.model.parameters()).device
+
+    if session._cached_fisher is None:
+        from backend.fisher import compute_fisher
+        session._cached_fisher = compute_fisher(session, mode="diagonal")
+
+    config = session.newton_config
+    reg = config.get("regularization", 1e-4)
+    step_scale = config.get("step_scale", 1.0)
+    solver = config.get("solver", "auto")
+
+    cache = session._cached_fisher
+    fisher_type = cache["type"]
+
+    if solver == "auto":
+        solver = fisher_type
+
+    if solver == "diagonal":
+        F = cache["data"]
+        dx = -g / (F + reg)
+    else:  # "full"
+        F = cache["data"]
+        n = session.param_count
+        work_dtype = _safe_dtype(F)
+        F_f32 = F.to(work_dtype)
+        F_reg = F_f32 + reg * torch.eye(n, device=F.device, dtype=work_dtype)
+        rhs_f32 = (-g).to(work_dtype)
+        if n < 5000:
+            try:
+                dx = torch.linalg.solve(F_reg, rhs_f32)
+            except Exception:
+                dx = torch.linalg.lstsq(F_reg, rhs_f32.unsqueeze(1)).solution.squeeze(1)
+        else:
+            dx = torch.linalg.lstsq(F_reg, rhs_f32.unsqueeze(1)).solution.squeeze(1)
+        dx = dx.to(device=device, dtype=torch.float32)
+
+    session.set_flat_params(session.get_flattened_params() + step_scale * dx)
+
+
 def _compute_loss(model, data_loader, loss_fn):
     """Compute average loss over the data loader."""
     device = next(model.parameters()).device
