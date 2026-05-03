@@ -29,7 +29,7 @@ from backend.landscape import (
     generate_random_directions,
     sample_loss_grid_sync,
 )
-from backend.ntk import compute_ntk_kernel, compute_ntk_eigenvalues
+from backend.ntk import compute_ntk_eigenvalues, compute_ntk_kernel
 from backend.training import run_training_sync
 from backend.utils import deserialize_tensor, make_loss_fn, serialize_tensor
 
@@ -250,6 +250,99 @@ def _solve_newton(req):
     return result
 
 
+def _solve_natural_gradient(req):
+    model, x, y, loss_fn, device = _prepare_model_and_data(req)
+
+    regularization = req["params"].get("regularization", 1e-4)
+    apply_step = req["params"].get("apply_step", True)
+    step_scale = req["params"].get("step_scale", 1.0)
+
+    # Build a simple DataLoader for Fisher and loss computation
+    ds = torch.utils.data.TensorDataset(x.cpu(), y.cpu())
+    loader = torch.utils.data.DataLoader(ds, batch_size=len(ds), shuffle=False)
+
+    # Compute diagonal Fisher (remote always uses diagonal)
+    n_fisher = sum(p.numel() for p in model.parameters())
+    fisher_diag = torch.zeros(n_fisher, device=device)
+    count = 0
+    max_samples = 16
+    for xb, yb in loader:
+        if count >= max_samples:
+            break
+        xb, yb = xb.to(device), yb.to(device)
+        for i in range(xb.size(0)):
+            if count >= max_samples:
+                break
+            model.zero_grad()
+            xi = xb[i:i + 1]
+            yi = yb[i:i + 1]
+            out = model(xi)
+            loss_i = loss_fn(out, yi)
+            grads = torch.autograd.grad(loss_i, model.parameters(), create_graph=False, retain_graph=False)
+            g_i = torch.cat([gr.detach().view(-1).float() for gr in grads])
+            fisher_diag += g_i * g_i
+            count += 1
+    model.zero_grad()
+    fisher_diag = fisher_diag / count
+
+    # Compute gradient
+    model.zero_grad()
+    output = model(x)
+    loss = loss_fn(output, y)
+    loss.backward()
+    g = torch.cat([p.grad.data.view(-1).float() for p in model.parameters() if p.grad is not None])
+
+    loss_before = _compute_loss(model, loader, loss_fn, device)
+
+    # Solve: F * dx = -g (diagonal case)
+    F_reg = fisher_diag + regularization
+    dx = -g / F_reg
+    dx = dx * step_scale
+
+    step_norm = dx.norm().item()
+    grad_norm = g.norm().item()
+
+    loss_after = None
+    step_applied = False
+    from backend.utils import serialize_tensor as _ser
+
+    if apply_step:
+        original_params = [p.data.clone() for p in model.parameters()]
+        offset = 0
+        with torch.no_grad():
+            for p in model.parameters():
+                numel = p.numel()
+                p.data.copy_((p.data.float() + dx[offset:offset + numel].view_as(p.float())).to(p.dtype))
+                offset += numel
+        loss_after = _compute_loss(model, loader, loss_fn, device)
+        step_applied = True
+
+        if loss_after > loss_before * 1.5:
+            for p, orig in zip(model.parameters(), original_params):
+                p.data.copy_(orig)
+            loss_after = loss_before
+            step_applied = False
+
+    loss_improvement = loss_before - (loss_after or loss_before)
+
+    result = {
+        "step_type": "natural_gradient",
+        "loss_before": loss_before,
+        "loss_after": loss_after or loss_before,
+        "loss_improvement": loss_improvement,
+        "step_norm": step_norm,
+        "gradient_norm": grad_norm,
+        "solver_used": "diagonal",
+        "regularization_used": regularization,
+        "converged": True,
+        "iterations": None,
+        "step_applied": step_applied,
+    }
+    if step_applied:
+        result["model_state"] = _ser(model.state_dict())
+    return result
+
+
 def _compute_loss(model, data_loader, loss_fn, device):
     """Compute average loss over the data loader."""
     model.eval()
@@ -339,6 +432,7 @@ DISPATCH = {
     "compute_eigenvalues": _compute_eigenvalues,
     "compute_landscape": _compute_landscape,
     "solve_newton": _solve_newton,
+    "solve_natural_gradient": _solve_natural_gradient,
     "run_training": _run_training,
     "compute_ntk": _compute_ntk,
     "compute_ntk_eigenvalues": _compute_ntk_eigenvalues,

@@ -233,6 +233,29 @@ class RemoteExecutor:
 
         return r
 
+    def solve_natural_gradient(self, session, regularization, apply_step, step_scale):
+        data = self._serialize_session(session)
+        data["type"] = "solve_natural_gradient"
+        data["params"] = {
+            "regularization": regularization,
+            "apply_step": apply_step,
+            "step_scale": step_scale,
+        }
+        if session.loss_fn is None:
+            data["loss_fn"] = "cross_entropy" if session.task_type == "classification" else "mse"
+        else:
+            data["loss_fn"] = "cross_entropy"
+
+        result = self._execute_remote(data, cfg.REMOTE_COMPUTE_TIMEOUT)
+        r = result["result"]
+
+        if r.get("step_applied") and r.get("model_state"):
+            session.model.load_state_dict(deserialize_tensor(r["model_state"], cfg.DEVICE))
+            session.invalidate_cache()
+        r.pop("model_state", None)
+
+        return r
+
     def run_training(self, session, payload):
         data = self._serialize_session(session)
         data["type"] = "run_training"

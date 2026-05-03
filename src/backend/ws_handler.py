@@ -93,6 +93,7 @@ ROUTER = {
     "compute_gradient_noise_scale": "_handle_compute_gradient_noise_scale",
     "compute_sharpness_landscape": "_handle_compute_sharpness_landscape",
     "compute_spectral_density": "_handle_compute_spectral_density",
+    "solve_natural_gradient": "_handle_solve_natural_gradient",
     "export_session": "_handle_export_session",
     "import_session": "_handle_import_session",
 }
@@ -163,6 +164,7 @@ def _get_response_type(request_type):
         "compute_gradient_noise_scale": "gradient_noise_scale",
         "compute_sharpness_landscape": "landscape_computed",
         "compute_spectral_density": "spectral_density",
+        "solve_natural_gradient": "natural_gradient_solved",
         "export_session": "session_exported",
         "import_session": "session_imported",
     }
@@ -674,6 +676,23 @@ class _Dispatcher:
         return solve_newton(session, reg, apply_step, step_scale, ws, solver=solver)
 
     @staticmethod
+    async def _handle_solve_natural_gradient(session, payload, ws):
+        _ensure_loss_fn(session)
+        reg = payload.get("regularization", cfg.DEFAULT_REGULARIZATION)
+        apply_step = payload.get("apply_step", True)
+        step_scale = payload.get("step_scale", cfg.DEFAULT_STEP_SCALE)
+        solver = payload.get("solver", "auto")
+
+        if cfg.REMOTE_ENABLED and _get_remote().connected:
+            loop = asyncio.get_event_loop()
+            remote = _get_remote()
+            return await loop.run_in_executor(
+                None, remote.solve_natural_gradient, session, reg, apply_step, step_scale)
+
+        from backend.equations import solve_natural_gradient
+        return solve_natural_gradient(session, reg, apply_step, step_scale, ws, solver=solver)
+
+    @staticmethod
     async def _handle_solve_linear_system(session, payload, ws):
         _ensure_loss_fn(session)
         if cfg.REMOTE_ENABLED and _get_remote().connected:
@@ -921,7 +940,7 @@ class _Dispatcher:
         from backend.fisher import compute_fisher, fisher_to_display_matrix
 
         mode = payload.get("mode", "auto")
-        max_samples = min(payload.get("max_samples", 16), 64)
+        max_samples = min(payload.get("max_samples", cfg.NTK_MAX_SAMPLES), 256)
         force = payload.get("force_compute", False)
 
         if session._cached_fisher is not None and not force:
@@ -968,7 +987,6 @@ class _Dispatcher:
     async def _handle_compute_layer_stats(session, payload, ws):
         if session.model is None:
             raise ValueError("Create a model first")
-        import torch
 
         layers = []
         # Hessian diagonal if cached
@@ -1047,7 +1065,6 @@ class _Dispatcher:
         if not session.param_snapshots:
             raise ValueError("No training snapshots available. Run training first.")
 
-        import torch
 
         num_bins = min(payload.get("num_bins", 50), 100)
         max_layers = min(payload.get("max_layers", 8), 20)

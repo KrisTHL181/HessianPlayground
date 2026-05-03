@@ -902,12 +902,13 @@ class VisualizationPanel {
             text: [data.loss_before?.toFixed(4), data.loss_after?.toFixed(4)],
             textposition: 'auto',
         }];
+        const stepTitle = data.step_type === 'natural_gradient' ? t('plot.natural_gradient_step') : t('plot.newton_step');
         const layout = {
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
             font: { color: C.plotFont, size: 11 },
             margin: { l: 40, r: 40, t: 40, b: 40 },
-            title: `${t('plot.newton_step')} (${t('plot.newton_step_improvement')} ${data.loss_improvement?.toFixed(4)})`,
+            title: `${stepTitle} (${t('plot.newton_step_improvement')} ${data.loss_improvement?.toFixed(4)})`,
             titlefont: { size: 12, color: C.plotFont },
         };
         Plotly.react(div, traces, layout, { responsive: true });
@@ -1817,6 +1818,7 @@ class App {
         document.getElementById('btn-export').onclick = () => this._exportSession();
         document.getElementById('btn-import').onchange = (e) => this._importSession(e);
         document.getElementById('btn-newton').onclick = () => this._solveNewton();
+        document.getElementById('btn-natural-grad').onclick = () => this._solveNaturalGradient();
         document.getElementById('btn-weight-hist').onclick = () => this._computeWeightHistogram();
         document.getElementById('btn-gradient').onclick = () => this._computeGradientStats();
         document.getElementById('btn-activations').onclick = () => this._computeActivationStats();
@@ -1999,7 +2001,7 @@ class App {
     }
 
     _setButtons(enabled) {
-        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-sharpness', 'btn-spectral', 'btn-newton'];
+        const btns = ['btn-hessian', 'btn-ntk', 'btn-fisher', 'btn-pca-landscape', 'btn-random-landscape', 'btn-interpolation', 'btn-lr-test', 'btn-noise-scale', 'btn-sharpness', 'btn-spectral', 'btn-newton', 'btn-natural-grad'];
         btns.forEach(id => {
             document.getElementById(id).disabled = !enabled;
         });
@@ -2308,6 +2310,26 @@ class App {
         }
     }
 
+    async _solveNaturalGradient() {
+        if (!this.state.hasModel) {
+            this.log.error(t('log.create_model_first'));
+            return;
+        }
+        try {
+            this.log.info(t('log.computing_natural_gradient'));
+            const result = await this.ws.send('solve_natural_gradient', {
+                regularization: 1e-4,
+                apply_step: true,
+                step_scale: 1.0,
+            });
+            this.vis.switchTab('equation');
+            this.vis.showEquationResult(result);
+            this.log.info(tf('log.natural_gradient_result', { loss_before: result.loss_before?.toFixed(4), loss_after: result.loss_after?.toFixed(4), loss_improvement: result.loss_improvement?.toFixed(4) }));
+        } catch (e) {
+            this.log.error(tf('log.natural_gradient_error', { message: e.message }));
+        }
+    }
+
     async _computeWeightHistogram() {
         if (!this.state.hasModel) {
             this.log.error(t('log.create_model_first'));
@@ -2386,11 +2408,12 @@ class App {
             return;
         }
         try {
-            this.log.info(t('log.computing_fisher'));
-            const result = await this.ws.send('compute_fisher', { mode: 'auto', max_samples: 16 }, 600000);
+            const maxSamples = parseInt(document.getElementById('ntk-max-samples').value) || 32;
+            this.log.info(tf('log.computing_fisher', { samples: maxSamples }));
+            const result = await this.ws.send('compute_fisher', { mode: 'auto', max_samples: maxSamples }, 600000);
             this.vis.switchTab('fisher');
             this.vis.showFisherHeatmap(result);
-            this.log.info(tf('log.fisher_computed', { method: result.method, memory_mb: result.memory_mb?.toFixed(1) }));
+            this.log.info(tf('log.fisher_computed', { method: result.method, samples: result.num_samples, memory_mb: result.memory_mb?.toFixed(1) }));
         } catch (e) {
             this.log.error(tf('log.error', { message: e.message }));
         }

@@ -35,6 +35,7 @@ VALID_REQUEST_TYPES = {
     "compute_gradient_noise_scale",
     "compute_sharpness_landscape",
     "compute_spectral_density",
+    "solve_natural_gradient",
     "export_session",
     "import_session",
 }
@@ -66,6 +67,7 @@ RESPONSE_TYPES = {
     "lr_test_complete",
     "gradient_noise_scale",
     "spectral_density",
+    "natural_gradient_solved",
     "session_exported",
     "session_imported",
 }
