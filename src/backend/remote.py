@@ -257,9 +257,6 @@ class RemoteExecutor:
         return r
 
     def run_training(self, session, payload):
-        if session.optimizer_type in ("newton_step", "natural_gradient"):
-            raise ValueError("Newton Step and Natural Gradient training are not supported in remote mode")
-
         data = self._serialize_session(session)
         data["type"] = "run_training"
 
@@ -273,6 +270,8 @@ class RemoteExecutor:
             "batch_size": payload.get("batch_size", cfg.DEFAULT_BATCH_SIZE) if hasattr(session, 'train_loader') else cfg.DEFAULT_BATCH_SIZE,
             "lr": optimizer_lr,
             "gradient_ascent": session.gradient_ascent,
+            "optimizer_type": session.optimizer_type,
+            "newton_config": session.newton_config,
         }
         if session.loss_fn is None:
             data["loss_fn"] = "cross_entropy" if session.task_type == "classification" else "mse"

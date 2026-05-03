@@ -361,30 +361,135 @@ def _compute_loss(model, data_loader, loss_fn, device):
 def _run_training(req):
     model, x, y, loss_fn, device = _prepare_model_and_data(req)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=req["params"].get("lr", cfg.DEFAULT_LEARNING_RATE))
+    optimizer_type = req["params"].get("optimizer_type", "standard")
     epochs = req["params"].get("epochs", cfg.DEFAULT_EPOCHS)
     batch_size = req["params"].get("batch_size", cfg.DEFAULT_BATCH_SIZE)
+    gradient_ascent = req["params"].get("gradient_ascent", False)
 
     # Reconstruct DataLoader from the sent data batch
     ds = torch.utils.data.TensorDataset(x.cpu(), y.cpu())
     loader = torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True)
     task_type = "classification" if req.get("loss_fn", "cross_entropy") == "cross_entropy" else "regression"
 
-    def progress_cb(epoch, total_epochs, batch_idx, total_batches, avg_loss, _train_acc):
-        if batch_idx == total_batches:
-            print(f"PROGRESS|{epoch}|{total_epochs}|{avg_loss:.6f}", flush=True)
+    if optimizer_type in ("newton_step", "natural_gradient"):
+        newton_config = req["params"].get("newton_config", {})
+        result = _train_with_special_optimizer(
+            model, x, y, loss_fn, loader, device, task_type,
+            epochs, gradient_ascent, optimizer_type, newton_config,
+        )
+    else:
+        lr = req["params"].get("lr", cfg.DEFAULT_LEARNING_RATE)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    result = run_training_sync(
-        model, optimizer, loss_fn, loader, None,
-        task_type, epochs, progress_callback=progress_cb,
-        gradient_ascent=req["params"].get("gradient_ascent", False),
-    )
+        def progress_cb(epoch, total_epochs, batch_idx, total_batches, avg_loss, _train_acc):
+            if batch_idx == total_batches:
+                print(f"PROGRESS|{epoch}|{total_epochs}|{avg_loss:.6f}", flush=True)
+
+        result = run_training_sync(
+            model, optimizer, loss_fn, loader, None,
+            task_type, epochs, progress_callback=progress_cb,
+            gradient_ascent=gradient_ascent,
+        )
 
     return {
         "loss_history": result["loss_history"],
         "final_loss": result["final_loss"],
         "model_state": result["model_state"],
     }
+
+
+def _train_with_special_optimizer(model, x, y, loss_fn, loader, device, task_type,
+                                   epochs, gradient_ascent, optimizer_type, newton_config):
+    """Training loop for newton_step and natural_gradient per-batch optimizers.
+
+    Computes the diagonal curvature matrix once from the first batch (matching the
+    local cached-hessian semantics), then reuses it for every step.
+
+    Each batch: forward → backward → solve D @ dx = -g → apply step.
+    """
+    reg = newton_config.get("regularization", 1e-4)
+    step_scale = newton_config.get("step_scale", 1.0)
+    n_params = sum(p.numel() for p in model.parameters())
+
+    # Compute curvature once (matches local: cached after first computation)
+    xb, yb = next(iter(loader))
+    xb, yb = xb.to(device), yb.to(device)
+
+    if optimizer_type == "newton_step":
+        H_diag = compute_diagonal_hessian_kernel(model, xb, yb, loss_fn, n_params)
+        diag = H_diag + reg
+    else:  # natural_gradient
+        F_diag = _compute_diagonal_fisher(model, xb, yb, loss_fn, n_params, device)
+        diag = F_diag + reg
+
+    loss_history = []
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        for batch_idx, (xb, yb) in enumerate(loader):
+            xb, yb = xb.to(device), yb.to(device)
+
+            model.zero_grad()
+            output = model(xb)
+            loss = loss_fn(output, yb)
+            if gradient_ascent:
+                (-loss).backward()
+            else:
+                loss.backward()
+
+            # Flatten gradient
+            g = torch.cat([p.grad.data.view(-1).float()
+                          for p in model.parameters() if p.grad is not None])
+
+            dx = (-g / diag) * step_scale
+
+            # Apply step
+            offset = 0
+            with torch.no_grad():
+                for p in model.parameters():
+                    numel = p.numel()
+                    p.data.copy_((
+                        p.data.float() + dx[offset:offset + numel].view_as(p.float())
+                    ).to(p.dtype))
+                    offset += numel
+
+            loss_val = loss.item()
+            if not torch.isnan(loss) and not torch.isinf(loss):
+                loss_history.append(loss_val)
+
+            if batch_idx == len(loader) - 1:
+                print(f"PROGRESS|{epoch}|{epochs}|{loss_val:.6f}", flush=True)
+
+            if torch.isnan(loss) or torch.isinf(loss):
+                raise RuntimeError(f"Loss exploded to NaN/Inf at epoch {epoch}, batch {batch_idx + 1}")
+
+    final_loss = loss_history[-1] if loss_history else 0.0
+
+    from backend.utils import serialize_tensor as _ser
+    return {
+        "loss_history": loss_history,
+        "final_loss": final_loss,
+        "model_state": _ser(model.state_dict()),
+    }
+
+
+def _compute_diagonal_fisher(model, x, y, loss_fn, n_params, device):
+    """Compute diagonal Fisher via squared per-sample gradients over the batch."""
+    fisher_diag = torch.zeros(n_params, device=device)
+    count = 0
+    for i in range(x.size(0)):
+        model.zero_grad()
+        xi = x[i:i + 1]
+        yi = y[i:i + 1]
+        out = model(xi)
+        loss_i = loss_fn(out, yi)
+        grads = torch.autograd.grad(loss_i, model.parameters(), create_graph=False, retain_graph=False)
+        g_i = torch.cat([gr.detach().view(-1).float() for gr in grads])
+        fisher_diag += g_i * g_i
+        count += 1
+    model.zero_grad()
+    fisher_diag = fisher_diag / count
+    return fisher_diag
 
 
 # ---------------------------------------------------------------------------
