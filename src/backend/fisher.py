@@ -35,6 +35,39 @@ def compute_fisher(session, max_samples=16, mode="auto"):
         return _compute_fisher_full(model, loss_fn, session.train_loader, device, param_count, max_samples)
 
 
+def compute_diagonal_fisher_kernel(model, loss_fn, param_count, device, x, y, max_samples=None):
+    """Compute diagonal Fisher via per-sample squared gradients.
+
+    Returns an on-device vector F_ii = (1/N) * sum_i (g_i)^2.
+
+    Args:
+        model: nn.Module on the correct device.
+        loss_fn: callable.
+        param_count: total number of parameters.
+        device: torch device.
+        x, y: input and target tensors of shape (N, ...).
+        max_samples: optional cap on number of samples to process.
+
+    Returns:
+        Tensor of shape (param_count,) on *device*.
+    """
+    n = min(x.size(0), max_samples) if max_samples is not None else x.size(0)
+    diag = torch.zeros(param_count, device=device)
+
+    for i in range(n):
+        model.zero_grad()
+        xi = x[i:i + 1]
+        yi = y[i:i + 1]
+        output = model(xi)
+        loss = loss_fn(output, yi)
+        grads = torch.autograd.grad(loss, model.parameters(), create_graph=False, retain_graph=False)
+        g = torch.cat([gr.detach().view(-1).float() for gr in grads])
+        diag += g * g
+
+    model.zero_grad()
+    return diag / max(n, 1)
+
+
 def _compute_fisher_full(model, loss_fn, train_loader, device, param_count, max_samples):
     """Compute full F = mean_i g_i g_i^T."""
     fisher = torch.zeros(param_count, param_count, device=device)
@@ -77,31 +110,21 @@ def _compute_fisher_full(model, loss_fn, train_loader, device, param_count, max_
 
 
 def _compute_fisher_diagonal(model, loss_fn, train_loader, device, param_count, max_samples):
-    """Compute diagonal Fisher: F_ii = mean_i g_i^2."""
-    diag = torch.zeros(param_count, device=device)
+    """Compute diagonal Fisher: F_ii = mean_i g_i^2. Returns cached dict."""
+    xs, ys = [], []
     count = 0
-
-    for x, y in train_loader:
+    for xb, yb in train_loader:
         if count >= max_samples:
             break
-        x, y = x.to(device), y.to(device)
+        take = min(xb.size(0), max_samples - count)
+        xs.append(xb[:take])
+        ys.append(yb[:take])
+        count += take
 
-        for i in range(x.size(0)):
-            if count >= max_samples:
-                break
-            model.zero_grad()
-            xi = x[i:i + 1]
-            yi = y[i:i + 1]
-            output = model(xi)
-            loss = loss_fn(output, yi)
+    x = torch.cat(xs, dim=0)[:count].to(device)
+    y = torch.cat(ys, dim=0)[:count].to(device)
 
-            grads = torch.autograd.grad(loss, model.parameters(), create_graph=False, retain_graph=False)
-            g = torch.cat([gr.detach().view(-1).float() for gr in grads])
-            diag += g * g
-            count += 1
-
-    model.zero_grad()
-    diag = diag / count
+    diag = compute_diagonal_fisher_kernel(model, loss_fn, param_count, device, x, y)
 
     return {
         "type": "diagonal",

@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 
 import backend.config as cfg
+from backend.fisher import compute_diagonal_fisher_kernel
 from backend.hessian import (
     compute_diagonal_hessian_kernel,
     compute_eigenvalues,
@@ -31,7 +32,13 @@ from backend.landscape import (
 )
 from backend.ntk import compute_ntk_eigenvalues, compute_ntk_kernel
 from backend.training import run_training_sync
-from backend.utils import deserialize_tensor, make_loss_fn, serialize_tensor
+from backend.utils import (
+    apply_flat_delta,
+    compute_loss,
+    deserialize_tensor,
+    make_loss_fn,
+    serialize_tensor,
+)
 
 # ---------------------------------------------------------------------------
 # Model reconstruction
@@ -199,7 +206,7 @@ def _solve_newton(req):
     loader = torch.utils.data.DataLoader(ds, batch_size=len(ds), shuffle=False)
 
     # Compute loss before
-    loss_before = _compute_loss(model, loader, loss_fn, device)
+    loss_before = compute_loss(model, loader, loss_fn, device)
 
     # Solve: H * dx = -g (diagonal case)
     H_reg = H + regularization
@@ -211,17 +218,12 @@ def _solve_newton(req):
 
     loss_after = None
     step_applied = False
-    from backend.utils import serialize_tensor as _ser
+
 
     if apply_step:
         original_params = [p.data.clone() for p in model.parameters()]
-        offset = 0
-        with torch.no_grad():
-            for p in model.parameters():
-                numel = p.numel()
-                p.data.copy_((p.data.float() + dx[offset:offset + numel].view_as(p.float())).to(p.dtype))
-                offset += numel
-        loss_after = _compute_loss(model, loader, loss_fn, device)
+        apply_flat_delta(model, dx)
+        loss_after = compute_loss(model, loader, loss_fn, device)
         step_applied = True
 
         if loss_after > loss_before * 1.5:
@@ -246,7 +248,7 @@ def _solve_newton(req):
         "step_applied": step_applied,
     }
     if step_applied:
-        result["model_state"] = _ser(model.state_dict())
+        result["model_state"] = serialize_tensor(model.state_dict())
     return result
 
 
@@ -257,33 +259,14 @@ def _solve_natural_gradient(req):
     apply_step = req["params"].get("apply_step", True)
     step_scale = req["params"].get("step_scale", 1.0)
 
-    # Build a simple DataLoader for Fisher and loss computation
+    # Build a simple DataLoader for loss computation
     ds = torch.utils.data.TensorDataset(x.cpu(), y.cpu())
     loader = torch.utils.data.DataLoader(ds, batch_size=len(ds), shuffle=False)
 
     # Compute diagonal Fisher (remote always uses diagonal)
     n_fisher = sum(p.numel() for p in model.parameters())
-    fisher_diag = torch.zeros(n_fisher, device=device)
-    count = 0
-    max_samples = 16
-    for xb, yb in loader:
-        if count >= max_samples:
-            break
-        xb, yb = xb.to(device), yb.to(device)
-        for i in range(xb.size(0)):
-            if count >= max_samples:
-                break
-            model.zero_grad()
-            xi = xb[i:i + 1]
-            yi = yb[i:i + 1]
-            out = model(xi)
-            loss_i = loss_fn(out, yi)
-            grads = torch.autograd.grad(loss_i, model.parameters(), create_graph=False, retain_graph=False)
-            g_i = torch.cat([gr.detach().view(-1).float() for gr in grads])
-            fisher_diag += g_i * g_i
-            count += 1
-    model.zero_grad()
-    fisher_diag = fisher_diag / count
+    fisher_diag = compute_diagonal_fisher_kernel(
+        model, loss_fn, n_fisher, device, x, y, max_samples=16)
 
     # Compute gradient
     model.zero_grad()
@@ -292,7 +275,7 @@ def _solve_natural_gradient(req):
     loss.backward()
     g = torch.cat([p.grad.data.view(-1).float() for p in model.parameters() if p.grad is not None])
 
-    loss_before = _compute_loss(model, loader, loss_fn, device)
+    loss_before = compute_loss(model, loader, loss_fn, device)
 
     # Solve: F * dx = -g (diagonal case)
     F_reg = fisher_diag + regularization
@@ -304,17 +287,12 @@ def _solve_natural_gradient(req):
 
     loss_after = None
     step_applied = False
-    from backend.utils import serialize_tensor as _ser
+
 
     if apply_step:
         original_params = [p.data.clone() for p in model.parameters()]
-        offset = 0
-        with torch.no_grad():
-            for p in model.parameters():
-                numel = p.numel()
-                p.data.copy_((p.data.float() + dx[offset:offset + numel].view_as(p.float())).to(p.dtype))
-                offset += numel
-        loss_after = _compute_loss(model, loader, loss_fn, device)
+        apply_flat_delta(model, dx)
+        loss_after = compute_loss(model, loader, loss_fn, device)
         step_applied = True
 
         if loss_after > loss_before * 1.5:
@@ -339,23 +317,9 @@ def _solve_natural_gradient(req):
         "step_applied": step_applied,
     }
     if step_applied:
-        result["model_state"] = _ser(model.state_dict())
+        result["model_state"] = serialize_tensor(model.state_dict())
     return result
 
-
-def _compute_loss(model, data_loader, loss_fn, device):
-    """Compute average loss over the data loader."""
-    model.eval()
-    total_loss = 0.0
-    total_samples = 0
-    with torch.no_grad():
-        for x_b, y_b in data_loader:
-            x_b, y_b = x_b.to(device), y_b.to(device)
-            output = model(x_b)
-            cur_loss = loss_fn(output, y_b)
-            total_loss += cur_loss.item() * x_b.size(0)
-            total_samples += x_b.size(0)
-    return total_loss / total_samples if total_samples > 0 else 0.0
 
 
 def _run_training(req):
@@ -419,7 +383,7 @@ def _train_with_special_optimizer(model, x, y, loss_fn, loader, device, task_typ
         H_diag = compute_diagonal_hessian_kernel(model, xb, yb, loss_fn, n_params)
         diag = H_diag + reg
     else:  # natural_gradient
-        F_diag = _compute_diagonal_fisher(model, xb, yb, loss_fn, n_params, device)
+        F_diag = compute_diagonal_fisher_kernel(model, loss_fn, n_params, device, xb, yb)
         diag = F_diag + reg
 
     loss_history = []
@@ -465,31 +429,13 @@ def _train_with_special_optimizer(model, x, y, loss_fn, loader, device, task_typ
 
     final_loss = loss_history[-1] if loss_history else 0.0
 
-    from backend.utils import serialize_tensor as _ser
+
     return {
         "loss_history": loss_history,
         "final_loss": final_loss,
-        "model_state": _ser(model.state_dict()),
+        "model_state": serialize_tensor(model.state_dict()),
     }
 
-
-def _compute_diagonal_fisher(model, x, y, loss_fn, n_params, device):
-    """Compute diagonal Fisher via squared per-sample gradients over the batch."""
-    fisher_diag = torch.zeros(n_params, device=device)
-    count = 0
-    for i in range(x.size(0)):
-        model.zero_grad()
-        xi = x[i:i + 1]
-        yi = y[i:i + 1]
-        out = model(xi)
-        loss_i = loss_fn(out, yi)
-        grads = torch.autograd.grad(loss_i, model.parameters(), create_graph=False, retain_graph=False)
-        g_i = torch.cat([gr.detach().view(-1).float() for gr in grads])
-        fisher_diag += g_i * g_i
-        count += 1
-    model.zero_grad()
-    fisher_diag = fisher_diag / count
-    return fisher_diag
 
 
 # ---------------------------------------------------------------------------

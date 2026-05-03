@@ -2,6 +2,8 @@
 
 import torch
 
+from backend.utils import compute_loss
+
 
 def _safe_dtype(t: torch.Tensor) -> torch.dtype:
     if t.dtype in (torch.float16, torch.bfloat16):
@@ -28,7 +30,7 @@ def solve_newton(session, regularization, apply_step, step_scale, ws,
     data_loader = session.train_loader
     device = next(model.parameters()).device
 
-    loss_before = _compute_loss(model, data_loader, loss_fn)
+    loss_before = compute_loss(model, data_loader, loss_fn)
 
     # Get gradient
     x, y = next(iter(data_loader))
@@ -117,7 +119,7 @@ def solve_newton(session, regularization, apply_step, step_scale, ws,
     if apply_step:
         original_params = [p.data.clone() for p in model.parameters()]
         session.set_flat_params(session.get_flattened_params() + dx)
-        loss_after = _compute_loss(model, data_loader, loss_fn)
+        loss_after = compute_loss(model, data_loader, loss_fn)
         step_applied = True
 
         if loss_after > loss_before * 1.5:
@@ -250,7 +252,7 @@ def solve_natural_gradient(session, regularization, apply_step, step_scale, ws,
     data_loader = session.train_loader
     device = next(model.parameters()).device
 
-    loss_before = _compute_loss(model, data_loader, loss_fn)
+    loss_before = compute_loss(model, data_loader, loss_fn)
 
     # Get gradient
     x, y = next(iter(data_loader))
@@ -312,7 +314,7 @@ def solve_natural_gradient(session, regularization, apply_step, step_scale, ws,
     if apply_step:
         original_params = [p.data.clone() for p in model.parameters()]
         session.set_flat_params(session.get_flattened_params() + dx)
-        loss_after = _compute_loss(model, data_loader, loss_fn)
+        loss_after = compute_loss(model, data_loader, loss_fn)
         step_applied = True
 
         if loss_after > loss_before * 1.5:
@@ -451,17 +453,3 @@ def apply_natural_gradient_step(session):
     session.set_flat_params(session.get_flattened_params() + step_scale * dx)
 
 
-def _compute_loss(model, data_loader, loss_fn):
-    """Compute average loss over the data loader."""
-    device = next(model.parameters()).device
-    model.eval()
-    total_loss = 0.0
-    total_samples = 0
-    with torch.no_grad():
-        for x, y in data_loader:
-            x, y = x.to(device), y.to(device)
-            output = model(x)
-            cur_loss = loss_fn(output, y)
-            total_loss += cur_loss.item() * x.size(0)
-            total_samples += x.size(0)
-    return total_loss / total_samples if total_samples > 0 else 0.0

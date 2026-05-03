@@ -52,3 +52,23 @@ def set_flat_params(model: nn.Module, flat: torch.Tensor):
 
 def make_loss_fn(task_type: str):
     return nn.CrossEntropyLoss() if task_type == "classification" else nn.MSELoss()
+
+
+def compute_loss(model, data_loader, loss_fn, device=None):
+    """Compute average loss over a data loader.
+
+    When *device* is None it is inferred from the model's parameters.
+    """
+    if device is None:
+        device = next(model.parameters()).device
+    model.eval()
+    total_loss = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for x, y in data_loader:
+            x, y = x.to(device), y.to(device)
+            output = model(x)
+            cur_loss = loss_fn(output, y)
+            total_loss += cur_loss.item() * x.size(0)
+            total_samples += x.size(0)
+    return total_loss / total_samples if total_samples > 0 else 0.0

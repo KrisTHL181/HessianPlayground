@@ -65,7 +65,8 @@ class RemoteExecutor:
         self._sftp.mkdir(f"{self._remote_dir}/backend")
         for fname in ["__init__.py", "config.py", "protocol.py", "hessian.py",
                       "landscape.py", "equations.py", "training.py",
-                      "session.py", "model_sandbox.py", "ntk.py"]:
+                      "session.py", "model_sandbox.py", "ntk.py",
+                      "utils.py", "fisher.py"]:
             src = os.path.join(backend_dir, fname)
             if os.path.exists(src):
                 self._sftp.put(src, f"{self._remote_dir}/backend/{fname}")
